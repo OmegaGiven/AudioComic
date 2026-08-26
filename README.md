@@ -24,28 +24,79 @@ a multi-voice audiobook. No cloud APIs -- everything runs on local models via
    `voice_map.json`, reviewable/editable by hand), then concatenates every
    segment into one final audiobook file.
 
-## Requirements
+## Setup
 
-- Python 3.11+
-- [Ollama](https://ollama.com) running locally, with a vision-capable model
-  (`ollama pull qwen3-vl:8b`) and a general-purpose model for narrative/
-  classification (`ollama pull devstral:24b` -- or substitute any model that
-  fits your hardware; update `MODEL`/`GENDER_MODEL` at the top of each
-  script).
-- [Kumiko](https://github.com/njean42/kumiko) cloned locally for panel
-  segmentation:
-  ```
-  git clone https://github.com/njean42/kumiko.git tools/kumiko
-  ```
-- [Piper TTS](https://github.com/rhasspy/piper) with one or more voice
-  models downloaded (see [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices)
-  on Hugging Face). The default voice pool in `04_tts_render.py` expects:
-  `lessac`, `amy`, `kristin`, `ljspeech`, `hfc_female` (medium quality) for
-  narrator/female voices, and `joe`, `ryan`, `sam`, `norman`, `bryce`
-  (medium quality) for male voices -- adjust `VOICE_POOLS` to whatever
-  voices you have.
-- `unrar` (for `.cbr`) and/or `unzip` (for `.cbz`).
-- `pip install -r requirements.txt`
+Requires Python 3.11+, [Ollama](https://ollama.com), and `unrar`/`unzip` for
+archive extraction. Everything below is copy-pasteable on Linux; adjust
+package-manager commands for your OS where noted.
+
+### 1. Clone this repo and set up a virtualenv
+
+```bash
+git clone https://github.com/OmegaGiven/AudioComic.git
+cd AudioComic
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 2. Archive extraction tools
+
+```bash
+# Debian/Ubuntu
+sudo apt install unrar unzip
+# Arch Linux
+sudo pacman -S unrar unzip
+# macOS (Homebrew)
+brew install unrar
+```
+
+### 3. Kumiko (panel segmentation)
+
+```bash
+git clone --depth 1 https://github.com/njean42/kumiko.git tools/kumiko
+```
+
+### 4. Ollama models
+
+```bash
+# If you don't have Ollama installed yet:
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Vision model (scene/dialogue/character analysis per panel)
+ollama pull qwen3-vl:8b
+
+# Narrative + voice-classification model
+ollama pull devstral:24b
+```
+
+Either model can be swapped for something else your hardware runs better --
+update `MODEL`/`GENDER_MODEL` at the top of `02_vision_analyze.py`,
+`03_narrative.py`, and `04_tts_render.py`.
+
+### 5. Piper TTS + voices
+
+```bash
+mkdir -p ~/.local/opt/piper && cd ~/.local/opt/piper
+curl -sL -o piper.tar.gz https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz
+tar xzf piper.tar.gz --strip-components=1
+rm piper.tar.gz
+
+mkdir -p voices && cd voices
+for voice in lessac amy kristin ljspeech hfc_female joe ryan sam norman bryce; do
+  curl -sL -o "en_US-${voice}-medium.onnx" \
+    "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/${voice}/medium/en_US-${voice}-medium.onnx"
+  curl -sL -o "en_US-${voice}-medium.onnx.json" \
+    "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/${voice}/medium/en_US-${voice}-medium.onnx.json"
+done
+```
+
+This installs to `~/.local/opt/piper` -- the path `04_tts_render.py` expects
+by default (`PIPER_BIN`/`VOICES_DIR` at the top of that file). Installing
+elsewhere just means updating those two constants. The voice list above
+matches `VOICE_POOLS` in the script; swap in any other
+[Piper voice](https://huggingface.co/rhasspy/piper-voices) you prefer, and
+update `VOICE_POOLS` to match.
 
 ## Usage
 
