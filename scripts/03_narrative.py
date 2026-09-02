@@ -65,7 +65,7 @@ def generate_narrative(panel_data_text: str, panel_count: int) -> str:
     )
     try:
         d = json.loads(r.stdout.strip().split("\n")[0])
-    except Exception as e:
+    except Exception:
         return ""
     return d.get("response", "").strip()
 

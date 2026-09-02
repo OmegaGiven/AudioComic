@@ -26,6 +26,11 @@ def test_strips_urls_and_collapses_whitespace(k):
     assert k.clean_for_speech("see  https://example.com/x   now") == "see now"
 
 
+def test_strips_parenthetical_stage_directions(k):
+    assert k.clean_for_speech("(whispering) I hear you out there") == "I hear you out there"
+    assert k.clean_for_speech("That includes YOU. (voice echoing)") == "That includes YOU."
+
+
 def test_empty(k):
     assert k.clean_for_speech("   ") == ""
 

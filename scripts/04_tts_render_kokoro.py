@@ -87,9 +87,11 @@ def classify_speakers(speakers: list) -> dict:
 
 def clean_for_speech(text: str) -> str:
     """Kokoro's G2P handles normal casing fine (unlike espeak/Piper, which
-    spelled short all-caps words as initialisms), so only strip URLs and
-    collapse whitespace here."""
+    spelled short all-caps words as initialisms). Strip URLs, drop any
+    parenthetical stage directions a narrative model may have added
+    ("(whispering)"), and collapse whitespace."""
     text = re.sub(r"https?://\S+", "", text)
+    text = re.sub(r"\([^)]*\)", "", text)
     return re.sub(r"\s+", " ", text).strip()
 
 

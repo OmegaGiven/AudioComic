@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
 """c_narrative.py <work_dir>
 
-Stage C of pipeline v2. Merges Magi's structure (dialogue + speakers) with the
-VLM's panel descriptions into flowing audiobook narration, page by page, using
-a prose-tuned model (Mistral-Nemo by default -- swap MODEL for another).
+Stage C of pipeline v2. Builds narrative.json from Magi's structure + the
+VLM's panel descriptions.
+
+Design rule (learned the hard way): **the language model never writes a
+spoken line.** Dialogue is copied verbatim from Magi's OCR with Magi's
+speaker attribution. The model only writes NARRATOR connective prose from the
+panel descriptions -- so it cannot invent dialogue, add "(whispering)" stage
+directions, or drop real bubbled lines.
 
 Reads   <work_dir>/structure.json, <work_dir>/descriptions.json
 Writes  <work_dir>/narrative.json   {"<page>": [{"speaker","text"}, ...], ...}
-  -- same format the Kokoro stage 4 (04_tts_render_kokoro.py) consumes.
-
-Name handling: Magi gives speakers as real names only if a character bank was
-supplied; otherwise "Character 1" etc. This stage is told it MAY replace a
-"Character N" label with a real name **only when that name is stated in the
-dialogue itself** (e.g. someone is addressed by name). It must never invent a
-name from vibes -- an unresolved speaker stays a description ("a hooded man").
+        -- same format 04_tts_render_kokoro.py consumes.
 """
 import json
 import re
@@ -21,93 +20,140 @@ import subprocess
 import sys
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(REPO_ROOT))
+from panelspeak.classify import refine_kind  # noqa: E402
+from panelspeak.text_elements import ElementKind  # noqa: E402
+
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 MODEL = "mistral-nemo:12b"
 
-PLACEHOLDER_SPEAKERS = {
-    "SPEAKER", "CHARACTER", "VILLAIN", "MAN", "WOMAN", "ENTITY", "VOICE",
-    "PERSON", "FIGURE", "STRANGER", "UNKNOWN", "CAPTION",
-}
+# lines that are never story content, whatever Magi flagged them
+JUNK_RE = re.compile(
+    r"decomics\.com|dccomics\.com|conversion by|first issue of eight|"
+    r"^\s*\[\d\d:\d\d\]|<[a-z]+>|warrts|good-ghs|^\s*if\s*$|"
+    r"\b\d+%\s+of\s+\w+\s+seconds?\b|population:\s*[\d,]+|the city without fear",
+    re.I,
+)
 
-PROMPT_TEMPLATE = """You are adapting one comic page into flowing audiobook narration.
+NARR_PROMPT = """Write 1-2 sentences of audiobook narration for ONE comic panel, based only on this visual description:
 
-Below, in reading order, each panel has:
-  DESCRIPTION: what the panel looks like (no names -- the describer wasn't told who anyone is)
-  DIALOGUE: lines actually lettered on the page, with the speaker Magi attributed
+{desc}
 
-This page has {panel_count} panels. Cover every panel, in order, none skipped.
+Rules:
+- Narrate the scene as a novelist would ("Rain hammered the cemetery."), NOT "the panel shows".
+- Do NOT write any dialogue or quoted speech. Someone else handles the spoken lines.
+- Do NOT name any character, hero, or franchise. Use appearance only ("the hooded man").
+- Do NOT add stage directions like "(whispering)".
+- If the description is just cover art / a logo / nothing is happening, reply with exactly: SKIP
+Output only the narration sentence(s), nothing else."""
 
-Write it as a novelist would narrate the scene happening -- NOT "this panel shows".
-- Weave the descriptions into narration.
-- Keep the dialogue lines as spoken lines, using the speaker labels given.
-- A speaker labelled "Character 1", "Character 2" etc: keep that label UNLESS a
-  real name for that person is spoken in the dialogue on this page (someone is
-  addressed by name, or names themselves). Then use the real name. Never invent
-  a name that isn't in the text -- if you don't know, write the narration around
-  them as "the hooded man" / "the woman in the red coat" using the description.
-- Caption / narration-box text (speaker NARRATOR) becomes narration.
-
-Output ONLY lines in this exact format, nothing else:
-NARRATOR: narration text
-NAME: dialogue text
-
-Panels:
-{panels}"""
+VOCATIVE_RE = re.compile(r"[,\"']\s*([A-Z][a-z]{2,15})\.?[\"']?\s*$")
+SAID_NAME_RE = re.compile(r'said,?\s*["\u201c][^"\u201d]*,\s*([A-Z][a-z]{2,15})\.?["\u201d]')
 
 
-def build_page_prompt(page, descriptions) -> tuple[str, int]:
-    pi = str(page["page_index"])
-    panels = page["panels"] or [{"panel_index": 0}]
-    texts_by_panel = {}
-    for t in page["texts"]:
-        if not t.get("essential", True):
-            continue  # drop SFX / watermarks / garbled OCR outright
-        texts_by_panel.setdefault(t.get("panel_index"), []).append(t)
-
-    blocks = []
-    for panel in panels:
-        idx = panel["panel_index"]
-        desc = descriptions.get(pi, {}).get(str(idx), "(no description)")
-        lines = [f"[Panel {idx + 1}]", f"DESCRIPTION: {desc}"]
-        for t in texts_by_panel.get(idx, []):
-            spk = t.get("speaker") or "NARRATOR"
-            lines.append(f"DIALOGUE {spk}: {t['text']}")
-        blocks.append("\n".join(lines))
-    # any essential text Magi couldn't place in a panel -> list under the page
-    for t in texts_by_panel.get(None, []):
-        blocks.append(f"[unplaced] DIALOGUE {t.get('speaker') or 'NARRATOR'}: {t['text']}")
-    return "\n\n".join(blocks), len(panels)
+def clean_line(t: str) -> str:
+    t = re.sub(r"\([^)]*\)", "", t)          # drop (stage directions)
+    t = t.strip().strip('"\u201c\u201d ').strip()
+    t = re.sub(r"\s+", " ", t)
+    return t
 
 
-def generate(prompt: str) -> str:
-    payload = {"model": MODEL, "prompt": prompt, "stream": False,
-               "options": {"num_predict": 2000, "num_ctx": 16384, "temperature": 0.7}}
+def is_junk(t: str) -> bool:
+    if JUNK_RE.search(t):
+        return True
+    letters = re.sub(r"[^A-Za-z]", "", t)
+    if len(letters) < 2:
+        return True
+    # single repeated-token OCR gibberish ("Fish Fish Fish", "01/01/01...")
+    toks = t.split()
+    if len(toks) >= 3 and len(set(toks)) == 1:
+        return True
+    if re.fullmatch(r"[\d/ ]+", t):
+        return True
+    return False
+
+
+def resolve_names(structure) -> dict:
+    """Cluster label -> real name, if a name is spoken at/about that speaker."""
+    names = {}
+    for page in structure["pages"]:
+        for t in page["texts"]:
+            spk = t.get("speaker")
+            if not spk or not spk.startswith("Character"):
+                continue
+            txt = t["text"]
+            m = SAID_NAME_RE.search(txt) or VOCATIVE_RE.search(txt)
+            if m:
+                cand = m.group(1)
+                if cand.lower() not in {"yes", "no", "sir", "please", "well"}:
+                    names.setdefault(spk, cand)
+    if names:
+        print(f"resolved names: {names}")
+    return names
+
+
+def narrate_panel(desc: str) -> str:
+    if not desc or desc == "(no description)":
+        return ""
+    payload = {"model": MODEL, "prompt": NARR_PROMPT.format(desc=desc),
+               "stream": False,
+               "options": {"num_predict": 160, "num_ctx": 4096, "temperature": 0.6}}
     try:
         r = subprocess.run(
-            ["curl", "-s", "-m", "300", OLLAMA_URL, "--data-binary", "@-"],
-            input=json.dumps(payload), capture_output=True, text=True, timeout=310,
+            ["curl", "-s", "-m", "120", OLLAMA_URL, "--data-binary", "@-"],
+            input=json.dumps(payload), capture_output=True, text=True, timeout=125,
         )
-        return (json.loads(r.stdout.strip().split("\n")[0]).get("response") or "").strip()
+        out = (json.loads(r.stdout.strip().split("\n")[0]).get("response") or "").strip()
     except Exception:
         return ""
+    out = re.split(r"\n\s*\n", out)[0].strip().strip('"')
+    if out.upper().startswith("SKIP") or not out:
+        return ""
+    # belt-and-suspenders: no quotes/parens leaked in
+    return re.sub(r"\([^)]*\)", "", out).replace('"', "").strip()
 
 
-def parse(raw: str):
-    segs = []
-    for line in raw.splitlines():
-        line = line.strip()
-        if not line:
+def page_texts(page, names):
+    """Ordered (kind, speaker, text) for a page. kind in {DIALOGUE, NARRATION}."""
+    items = []
+    for t in page["texts"]:
+        raw = t["text"]
+        if is_junk(raw):
             continue
-        m = re.match(r"^([A-Z][A-Za-z0-9 '.\-]{1,40}):\s*(.+)$", line)
-        if m:
-            spk = m.group(1).strip()
-            if spk.upper() in PLACEHOLDER_SPEAKERS:
-                spk = "NARRATOR"
-            segs.append({"speaker": spk.upper() if spk.isupper() or " " in spk else spk,
-                         "text": m.group(2).strip()})
-        elif segs:
-            segs[-1]["text"] += " " + line
-    return segs
+        txt = clean_line(raw)
+        if not txt:
+            continue
+        spk = t.get("speaker")
+        # Magi's is_essential flag is noisy: it drops real dialogue (keep those
+        # -- they have a speaker) but it's right about junk fragments. So only
+        # trust a False when the text is also short and unattributed.
+        if not t.get("essential", True) and not spk and len(txt.split()) < 5:
+            continue
+        # SFX slipped through OCR -> drop
+        if refine_kind("SFX" if not spk else "DIALOGUE", txt,
+                       in_bubble=bool(spk)) is ElementKind.SFX:
+            continue
+        if spk and spk.startswith("Character"):
+            spk = names.get(spk, spk)
+        pidx = t.get("panel_index") if t.get("panel_index") is not None else 999
+        if spk:
+            items.append((pidx, "DIALOGUE", spk, txt))
+        else:
+            # unattributed -> narration box (location captions, off-panel voice-over)
+            items.append((pidx, "NARRATION", "NARRATOR", txt))
+    items.sort(key=lambda x: x[0])
+    return items
+
+
+def merge_runs(segs):
+    out = []
+    for s in segs:
+        if out and out[-1]["speaker"] == s["speaker"]:
+            out[-1]["text"] = f"{out[-1]['text']} {s['text']}".strip()
+        else:
+            out.append(dict(s))
+    return out
 
 
 def main():
@@ -118,27 +164,41 @@ def main():
     work_dir = Path(sys.argv[1])
     structure = json.load(open(work_dir / "structure.json"))
     descriptions = json.load(open(work_dir / "descriptions.json"))
-    narr_path = work_dir / "narrative.json"
-    narrative = json.load(open(narr_path)) if narr_path.exists() else {}
+    names = resolve_names(structure)
 
-    pages = structure["pages"]
-    todo = [p for p in pages if str(p["page_index"]) not in narrative]
-    print(f"{len(pages)} pages, {len(todo)} to narrate.")
+    narrative = {}
+    for page in structure["pages"]:
+        pi = str(page["page_index"])
+        texts = page_texts(page, names)
+        real_text = [t for t in texts if len(t[3]) > 3]
+        # front matter: one "panel", basically no text -> skip
+        if len(page["panels"]) <= 1 and len(real_text) <= 1:
+            print(f"page {pi}: front matter / empty ({len(real_text)} texts) -- skipped")
+            continue
 
-    for n, page in enumerate(todo):
-        panels_text, panel_count = build_page_prompt(page, descriptions)
-        prompt = PROMPT_TEMPLATE.format(panel_count=panel_count, panels=panels_text)
-        segs = parse(generate(prompt))
-        if len(segs) < panel_count:
-            segs2 = parse(generate(prompt + "\n\nYour last attempt stopped early. "
-                                            f"Cover all {panel_count} panels."))
-            if len(segs2) > len(segs):
-                segs = segs2
-        narrative[str(page["page_index"])] = segs
-        json.dump(narrative, open(narr_path, "w"), indent=2)
-        print(f"[{n+1}/{len(todo)}] page {page['page_index']}: {len(segs)} segments")
+        by_panel = {}
+        for pidx, kind, spk, txt in texts:
+            by_panel.setdefault(pidx, []).append((kind, spk, txt))
 
-    print(f"Done. Narrative: {narr_path}")
+        segs = []
+        panels = page["panels"] or [{"panel_index": 0}]
+        seen_panels = [p["panel_index"] for p in panels]
+        for pidx in seen_panels + [x for x in by_panel if x not in seen_panels]:
+            desc = descriptions.get(pi, {}).get(str(pidx), "")
+            narr = narrate_panel(desc)
+            if narr:
+                segs.append({"speaker": "NARRATOR", "text": narr})
+            for _kind, spk, txt in by_panel.get(pidx, []):
+                segs.append({"speaker": spk.upper() if spk == "NARRATOR" else spk,
+                             "text": txt})
+
+        segs = merge_runs(segs)
+        narrative[pi] = segs
+        json.dump(narrative, open(work_dir / "narrative.json", "w"), indent=2)
+        print(f"page {pi}: {len(segs)} segments "
+              f"({sum(1 for s in segs if s['speaker'] != 'NARRATOR')} dialogue)")
+
+    print(f"Done. Narrative: {work_dir / 'narrative.json'}")
 
 
 if __name__ == "__main__":
