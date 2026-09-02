@@ -67,6 +67,26 @@ pip_install() {
   fi
 }
 
+ensure_kokoro_venv() {
+  local kv="$VENVS/kokoro"
+  if [[ ! -e "$kv/.ready" ]]; then
+    mk_venv "$kv"
+    pip_install "$kv" pip setuptools wheel
+    # shellcheck disable=SC2086
+    pip_install "$kv" ${DEPS[kokoro]}
+    local V="$kv"; eval "${POSTSETUP[kokoro]}"
+    touch "$kv/.ready"
+  fi
+}
+
+ensure_refs() {
+  shopt -s nullglob; local have=("$HERE"/refs/*.wav); shopt -u nullglob
+  [[ ${#have[@]} -gt 0 ]] && return 0
+  echo "=== generating reference voice clips (Kokoro) ==="
+  ensure_kokoro_venv
+  ( cd "$HERE" && PYTHONPATH="$HERE" "$VENVS/kokoro/bin/python" make_refs.py )
+}
+
 run_engine() {
   local eng="$1"
   local venv="$VENVS/$eng"
@@ -97,6 +117,11 @@ PY
   fi
   ( cd "$HERE" && PYTHONPATH="$HERE" "$venv/bin/python" "engines/${eng}_engine.py" )
 }
+
+# cloning engines need reference clips
+for eng in "${want[@]}"; do
+  case "$eng" in chatterbox|vibevoice) ensure_refs; break ;; esac
+done
 
 for eng in "${want[@]}"; do
   if run_engine "$eng"; then :; else
