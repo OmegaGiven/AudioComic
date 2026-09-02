@@ -39,42 +39,52 @@ class Vocalization:
     canonical: str          # lexicon key, or "" for a recognised-shape unknown
     emotion: str | None
     nonverbal_tag: str | None
-    spoken: str             # plain-text fallback for tag-less engines
+    spoken: str             # clean interjection for a plain TTS engine; "" = don't
+                            # try to voice it, narrate it instead
+    narration: str          # verb phrase for a narrator beat: "{subject} {narration}."
     intensity: float        # 0.0 .. 1.0
 
     @property
     def is_known(self) -> bool:
         return self.canonical != ""
 
+    @property
+    def prefer_narration(self) -> bool:
+        """True when a plain (non-emotive) engine should turn this into a
+        narrator action beat rather than read it out. Breathy / wordless
+        noises never sound right spelled phonetically."""
+        return not self.spoken
 
-# canonical -> (emotion, nonverbal_tag, spoken_fallback)
-_LEXICON: dict[str, tuple[str | None, str | None, str]] = {
-    "tsk":    ("disapproval", None,        "tsk"),
-    "sigh":   ("weary",       "<sigh>",    "haaah"),
-    "gasp":   ("shock",       "<gasp>",    "gasp"),
-    "ugh":    ("disgust",     "<groan>",   "ugh"),
-    "argh":   ("frustration", "<groan>",   "argh"),
-    "grr":    ("anger",       None,        "grrr"),
-    "laugh":  ("amused",      "<laugh>",   "ha ha"),
-    "chuckle":("amused",      "<chuckle>", "heh heh"),
-    "scoff":  ("scorn",       None,        "pfft"),
-    "hmm":    ("thoughtful",  None,        "hmm"),
-    "huh":    ("confused",    None,        "huh"),
-    "ahem":   ("pointed",     "<cough>",   "ahem"),
-    "cough":  ("neutral",     "<cough>",   "cough"),
-    "shush":  ("urgent",      None,        "shhh"),
-    "scream": ("fear",        None,        "aaaah"),
-    "whimper":("distress",    None,        "nnh"),
-    "oof":    ("pain",        None,        "oof"),
-    "whew":   ("relief",      None,        "whew"),
-    "mmm":    ("pleased",     None,        "mmm"),
-    "psst":   ("conspiratorial", None,     "psst"),
-    "boo":    ("mocking",     None,        "boo"),
-    "yawn":   ("bored",       "<yawn>",    "haaawm"),
-    "sniff":  ("tearful",     "<sniff>",   "sniff"),
-    "sob":    ("crying",      None,        "sob"),
-    "gulp":   ("nervous",     None,        "gulp"),
-    "pant":   ("winded",      None,        "hah hah"),
+
+# canonical -> (emotion, nonverbal_tag, spoken_interjection, narration_verb_phrase)
+# spoken == "" means: there's no clean way to voice this; narrate it.
+_LEXICON: dict[str, tuple[str | None, str | None, str, str]] = {
+    "tsk":    ("disapproval",    None,        "Tsk",   "clicked their tongue"),
+    "sigh":   ("weary",          "<sigh>",    "",      "sighed"),
+    "gasp":   ("shock",          "<gasp>",    "",      "gasped"),
+    "ugh":    ("disgust",        "<groan>",   "Ugh",   "groaned"),
+    "argh":   ("frustration",    "<groan>",   "Argh",  "let out a frustrated groan"),
+    "grr":    ("anger",          None,        "Grrr",  "growled"),
+    "laugh":  ("amused",         "<laugh>",   "Ha, ha","laughed"),
+    "chuckle":("amused",         "<chuckle>", "Heh",   "chuckled"),
+    "scoff":  ("scorn",          None,        "Hmph",  "scoffed"),
+    "hmm":    ("thoughtful",     None,        "Hmm",   "hummed thoughtfully"),
+    "huh":    ("confused",       None,        "Huh",   "grunted, confused"),
+    "ahem":   ("pointed",        "<cough>",   "Ahem",  "cleared their throat"),
+    "cough":  ("neutral",        "<cough>",   "",      "coughed"),
+    "shush":  ("urgent",         None,        "Shh",   "hissed for quiet"),
+    "scream": ("fear",           None,        "",      "screamed"),
+    "whimper":("distress",       None,        "",      "whimpered"),
+    "oof":    ("pain",           None,        "Oof",   "grunted"),
+    "whew":   ("relief",         None,        "Whew",  "let out a breath"),
+    "mmm":    ("pleased",        None,        "Mmm",   "made a low, pleased sound"),
+    "psst":   ("conspiratorial", None,        "Psst",  "whispered"),
+    "boo":    ("mocking",        None,        "Boo",   "jeered"),
+    "yawn":   ("bored",          "<yawn>",    "",      "yawned"),
+    "sniff":  ("tearful",        "<sniff>",   "",      "sniffled"),
+    "sob":    ("crying",         None,        "",      "sobbed"),
+    "gulp":   ("nervous",        None,        "",      "swallowed hard"),
+    "pant":   ("winded",         None,        "",      "panted"),
 }
 
 # surface spelling (already lowercased + de-stretched) -> canonical key
@@ -180,24 +190,25 @@ def normalize_vocalization(surface: str | None) -> Vocalization | None:
     if not destretched:
         return None
 
+    def _mk(canonical: str, *, spoken_override: str | None = None) -> Vocalization:
+        emotion, tag, spoken, narration = _LEXICON[canonical]
+        return Vocalization(raw, canonical, emotion, tag,
+                            spoken if spoken_override is None else spoken_override,
+                            narration, round(intensity, 3))
+
     # 1a. laughter family: (bw|mw|w)? a? (ha|hah|heh|hyuk)+
     if re.fullmatch(r"(?:bw|mw|w)?a?(?:ha|hah|heh|huk|hyuk|hah){2,}h?", core_nospace):
-        emotion, tag, spoken = _LEXICON["laugh"]
-        return Vocalization(raw, "laugh", emotion, tag, spoken, round(intensity, 3))
+        return _mk("laugh")
 
     # 1b. the open-vowel scream family: a+ h* / e+ k+ / etc.
     if re.fullmatch(r"a{2,}h*|a+h{2,}|e{3,}k*|y?a{3,}", core_nospace):
-        emotion, tag, _ = _LEXICON["scream"]
-        return Vocalization(raw, "scream", emotion, tag, _scream_spoken(stretch), round(intensity, 3))
+        return _mk("scream")
 
     # 1c. exact alias hit (try de-stretched, then a single-char-run variant)
     for key in (destretched, _RUN.sub(r"\1", core_nospace)):
         canonical = _ALIASES.get(key)
         if canonical:
-            emotion, tag, spoken = _LEXICON[canonical]
-            if canonical == "scream":
-                spoken = _scream_spoken(stretch)
-            return Vocalization(raw, canonical, emotion, tag, spoken, round(intensity, 3))
+            return _mk(canonical)
 
     # 2. sentence? then it's not a vocalization
     if _looks_like_sentence(core):
@@ -205,11 +216,7 @@ def normalize_vocalization(surface: str | None) -> Vocalization | None:
 
     # 3. recognised *shape* but unknown token -> pass through to the engine
     if _looks_like_vocalization_shape(destretched):
-        return Vocalization(raw, "", None, None, core.strip() or raw, round(intensity, 3))
+        return Vocalization(raw, "", None, None, core.strip() or raw,
+                            "made a sound", round(intensity, 3))
 
     return None
-
-
-def _scream_spoken(stretch: int) -> str:
-    n = max(2, min(6, stretch))
-    return "a" * n + "h"

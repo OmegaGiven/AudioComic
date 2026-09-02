@@ -1,0 +1,35 @@
+{
+  "title": "AudioComic TTS bake-off passage",
+  "notes": "~110 words. Exercises: neutral narration, three distinct voices (menacing male, urgent heroic male, commanding female), a merged vocalization (Tsk.), a pained scream, a weary sigh, and a shout. Keep this stable so renders are comparable across engines and across time.",
+  "cast": {
+    "NARRATOR":   {"role": "narrator",   "ref": "narrator.wav"},
+    "BLACK HAND": {"role": "male-old",    "ref": "black_hand.wav", "hint": "cold, quiet, menacing"},
+    "HAL JORDAN": {"role": "male-young",  "ref": "hal_jordan.wav", "hint": "urgent, heroic"},
+    "MERA":       {"role": "female-young","ref": "mera.wav",       "hint": "commanding, sharp"}
+  },
+  "segments": [
+    {"speaker": "NARRATOR",   "emotion": "neutral",   "kind": "caption",
+     "text": "The graveyard was quiet now. The lantern's light had gone out an hour ago, and the cold had come in after it."},
+
+    {"speaker": "BLACK HAND", "emotion": "menacing",  "kind": "dialogue",
+     "text": "Tsk. You should be honored. Not everyone gets to be a part of what comes next."},
+
+    {"speaker": "HAL JORDAN", "emotion": "urgent",    "kind": "dialogue",
+     "text": "Mera, we have to move. Whatever he's doing, it's already started."},
+
+    {"speaker": "MERA",       "emotion": "commanding","kind": "dialogue",
+     "text": "Then we end it here. Get down!"},
+
+    {"speaker": "NARRATOR",   "emotion": "tense",     "kind": "caption",
+     "text": "The ground split open. Hands, grey and clutching, tore up through the frost."},
+
+    {"speaker": "HAL JORDAN", "emotion": "pain",      "kind": "vocalization",
+     "text": "Aaaah!"},
+
+    {"speaker": "MERA",       "emotion": "weary",     "kind": "dialogue",
+     "text": "*sigh* It's never just one of them, is it."},
+
+    {"speaker": "NARRATOR",   "emotion": "ominous",   "kind": "caption",
+     "text": "Far below the city, something old and patient opened its eyes."}
+  ]
+}

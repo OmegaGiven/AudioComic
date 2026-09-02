@@ -11,3 +11,8 @@ tools/kumiko/
 .pytest_cache/
 .ruff_cache/
 .coverage
+
+bakeoff/.venvs/
+bakeoff/out/
+bakeoff/refs/*
+!bakeoff/refs/.gitkeep
