@@ -50,6 +50,12 @@ class Panel:
     image: str
     bbox: list[float] = field(default_factory=list)
     scene: str = ""
+    #: which phase owns .scene ("pass1" transcribe, "pass2" redescribe) and a
+    #: signature of the redescribe context, so redescribe only re-runs panels
+    #: whose identities changed.
+    scene_source: str = "pass1"
+    scene_sig: str = ""
+    #: the transcribe vision call -- raw response cached for re-parse
     vision: Vision = field(default_factory=Vision)
 
 
@@ -182,11 +188,21 @@ class ComicDB:
         self._d["panels"].append(_panel_dict(panel))
         self._d["panels"].sort(key=lambda p: (p["page"], p["index"]))
 
-    def set_scene(self, panel_id: str, scene: str, vision: Vision) -> None:
+    def set_transcribe(self, panel_id: str, scene: str, vision: Vision) -> None:
+        """Store the Pass-1 vision. Only sets .scene if Pass 2 hasn't claimed it."""
+        for p in self._d["panels"]:
+            if p["id"] == panel_id:
+                p["vision"] = asdict(vision)
+                if p.get("scene_source", "pass1") == "pass1":
+                    p["scene"] = scene
+                return
+
+    def set_redescribe(self, panel_id: str, scene: str, sig: str) -> None:
         for p in self._d["panels"]:
             if p["id"] == panel_id:
                 p["scene"] = scene
-                p["vision"] = asdict(vision)
+                p["scene_source"] = "pass2"
+                p["scene_sig"] = sig
                 return
 
     def replace_blocks_for_panel(self, panel_id: str, blocks: list[Block]) -> None:

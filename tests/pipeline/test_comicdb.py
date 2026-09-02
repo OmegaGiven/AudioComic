@@ -45,11 +45,22 @@ def test_panel_ids_stable_and_sorted(tmp_path):
 def test_scene_and_vision_cached(tmp_path):
     db = _seed(tmp_path)
     v = Vision(model="qwen3-vl:8b", prompt_v=2, raw="RAW RESPONSE", at="2026-01-01")
-    db.set_scene("p003_00", "A dark room.", v)
+    db.set_transcribe("p003_00", "A dark room.", v)
     db.save()
     p = ComicDB.load(tmp_path).panel("p003_00")
     assert p.scene == "A dark room."
     assert p.vision.raw == "RAW RESPONSE" and p.vision.prompt_v == 2
+
+
+def test_redescribe_owns_scene_after_pass2(tmp_path):
+    db = _seed(tmp_path)
+    db.set_transcribe("p003_00", "pass 1 guess", Vision(raw="r"))
+    db.set_redescribe("p003_00", "pass 2 accurate", sig="abc123")
+    # a later transcribe re-parse must not clobber the pass-2 scene
+    db.set_transcribe("p003_00", "pass 1 again", Vision(raw="r2"))
+    p = db.panel("p003_00")
+    assert p.scene == "pass 2 accurate" and p.scene_source == "pass2"
+    assert p.vision.raw == "r2"
 
 
 def test_blocks_replace_and_query(tmp_path):
