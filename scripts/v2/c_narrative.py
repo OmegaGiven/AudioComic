@@ -45,8 +45,7 @@ Write it as a novelist would narrate the scene happening -- NOT "this panel show
   addressed by name, or names themselves). Then use the real name. Never invent
   a name that isn't in the text -- if you don't know, write the narration around
   them as "the hooded man" / "the woman in the red coat" using the description.
-- Caption / narration-box text is NARRATOR.
-- Ignore any DIALOGUE line marked (non-essential).
+- Caption / narration-box text (speaker NARRATOR) becomes narration.
 
 Output ONLY lines in this exact format, nothing else:
 NARRATOR: narration text
@@ -59,23 +58,24 @@ Panels:
 def build_page_prompt(page, descriptions) -> tuple[str, int]:
     pi = str(page["page_index"])
     panels = page["panels"] or [{"panel_index": 0}]
-    # group texts by panel via bbox containment; fall back to page-level list
     texts_by_panel = {}
     for t in page["texts"]:
-        pidx = t.get("panel_index")
-        texts_by_panel.setdefault(pidx, []).append(t)
+        if not t.get("essential", True):
+            continue  # drop SFX / watermarks / garbled OCR outright
+        texts_by_panel.setdefault(t.get("panel_index"), []).append(t)
 
     blocks = []
     for panel in panels:
         idx = panel["panel_index"]
         desc = descriptions.get(pi, {}).get(str(idx), "(no description)")
         lines = [f"[Panel {idx + 1}]", f"DESCRIPTION: {desc}"]
-        dts = texts_by_panel.get(idx) or texts_by_panel.get(None, []) if idx == 0 else texts_by_panel.get(idx, [])
-        for t in dts:
+        for t in texts_by_panel.get(idx, []):
             spk = t.get("speaker") or "NARRATOR"
-            tag = "" if t.get("essential", True) else " (non-essential)"
-            lines.append(f"DIALOGUE {spk}: {t['text']}{tag}")
+            lines.append(f"DIALOGUE {spk}: {t['text']}")
         blocks.append("\n".join(lines))
+    # any essential text Magi couldn't place in a panel -> list under the page
+    for t in texts_by_panel.get(None, []):
+        blocks.append(f"[unplaced] DIALOGUE {t.get('speaker') or 'NARRATOR'}: {t['text']}")
     return "\n\n".join(blocks), len(panels)
 
 
