@@ -24,26 +24,34 @@ NARRATION = re.compile(rf"^\s*{NAME}\s+(?:said|knelt|stood|turned|raised|whisper
 
 _COMMON = set("""
 a an the and or but not so if then than as at by for from in into of on to up with
+through along around across toward towards past until while though although because
+since upon without within beyond behind beside between against during onto off over
+under about after before near
 i me my you your he she it we they him her them us our his hers its their this that
-these those here there now back away down out off over under again just only very
+these those here there now back away down out again just only very still yet
 yes no ok okay sure fine well hey wait stop look listen come go get got give take
-sorry please thanks thank sir maam man dude kid son dad mom mother father brother
-sister boss chief doctor captain sergeant lieutenant colonel general everyone
-everybody someone somebody nobody people friend buddy pal boy girl lady god hell
-damn christ lord jesus death dead alive alone lost cold hot warm dark light hungry
-tired scared afraid ready done gone home real true good bad better worse right wrong
-late early sick hurt fighting trying doing saying telling asking talking working
-looking waiting leaving staying calling dying running thinking coming going holding
-standing sitting moving turning falling rising warning begging hoping praying human
-family blood power willing able glad happy proud curious aware part what who where
-why how when which whose everything nothing something anything all none more most
-less least first last next each every any some both few many much such other same
+sorry please thanks thank sir maam man dude kid son dad mom mama papa mother father
+brother sister boss chief doctor captain sergeant lieutenant colonel general
+everyone everybody someone somebody nobody anyone people person folks friend buddy
+pal boy girl lady god hell damn christ lord jesus death dead alive alone lost cold
+hot warm dark light hungry thirsty tired weary scared afraid ready done finished
+gone home real true good bad evil great fine better worse right wrong late early
+sick hurt safe free clear sure certain sorry glad happy proud angry mad calm quiet
+loud human family blood power kind sort part what who where why how when which
+whose everything nothing something anything everyone all none more most less least
+first second last next another each every any some both few several many much such
+other same enough only own new old young big small long short high low
 """.split())
 
 
 def _ok(name: str) -> bool:
-    words = [w.lower().strip(".'\"") for w in name.split()]
-    return bool(words) and not all(w in _COMMON for w in words)
+    words = [w.lower().strip(".'\"—-") for w in name.split()]
+    if not words or not words[0]:
+        return False
+    # a name is never a gerund / present participle
+    if any(w.endswith("ing") for w in words):
+        return False
+    return not all(w in _COMMON for w in words)
 
 
 def collect(db: ComicDB) -> list[NameEvidence]:
