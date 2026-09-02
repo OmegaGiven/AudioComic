@@ -53,7 +53,7 @@ def _text_for(seg) -> str:
 
 
 def main() -> None:
-    _, segs = load_passage()
+    _, segs = load_passage(emotive=True)
     model = ChatterboxTTS.from_pretrained(device="cuda")
     d = engine_out("chatterbox")
     wavs = []

@@ -40,53 +40,66 @@ class Seg:
     ref: str | None = None
 
 
-def load_passage() -> tuple[dict, list[Seg]]:
-    data = json.loads((BAKEOFF_DIR / "passage.json").read_text())
-    try:
-        from panelspeak.onomatopoeia import normalize_vocalization
-    except Exception:
-        normalize_vocalization = lambda s: None  # noqa: E731
+def load_passage(*, emotive: bool = False) -> tuple[dict, list[Seg]]:
+    """Load passage.json and prepare per-segment speak text.
 
+    ``emotive=False`` (Kokoro, Piper): onomatopoeia is cleaned for a plain
+    engine -- a standalone noise becomes a narrator beat ("Hal Jordan
+    screamed."), a breathy noise opening a line is lifted to its own narrator
+    beat, and a clean interjection ("Tsk.") is kept inline.
+    ``emotive=True`` (Chatterbox, Orpheus, VibeVoice): noises are left in for
+    the engine to perform, with tags / intensity carried along.
+    """
+    import re as _re
+
+    from panelspeak.onomatopoeia import normalize_vocalization
+
+    data = json.loads((BAKEOFF_DIR / "passage.json").read_text())
     cast = data["cast"]
     segs: list[Seg] = []
-    for i, s in enumerate(data["segments"]):
-        raw = s["text"]
-        speak = raw
-        tags: list[str] = []
-        intensity = 0.0
 
-        # replace a leading/standalone *marker* or bare vocalization token
-        voc = normalize_vocalization(raw.strip().strip("*"))
-        if voc is not None:
-            intensity = voc.intensity
-            if voc.nonverbal_tag:
-                tags.append(voc.nonverbal_tag)
-            # whole segment is just the noise -> use the spoken fallback
-            if voc.is_known and len(raw.split()) <= 2:
-                speak = voc.spoken
-        else:
-            # inline "*sigh* rest of line" -> pull the marker out
-            import re
-            m = re.match(r"\s*\*([a-z]+)\*\s*(.*)", raw, re.I)
-            if m:
-                inner = normalize_vocalization(m.group(1))
-                if inner is not None:
-                    intensity = inner.intensity
-                    if inner.nonverbal_tag:
-                        tags.append(inner.nonverbal_tag)
-                    speak = (inner.spoken + ". " + m.group(2)).strip()
+    def _subject(sp: str) -> str:
+        return " ".join(w.capitalize() for w in sp.split()) if sp != "NARRATOR" else "Someone"
 
+    def add(speaker, emotion, kind, raw, speak, voc=None):
         segs.append(Seg(
-            idx=i,
-            speaker=s["speaker"],
-            emotion=s.get("emotion", "neutral"),
-            kind=s.get("kind", "dialogue"),
-            raw_text=raw,
-            speak_text=speak,
-            nonverbal=tags,
-            intensity=intensity,
-            ref=cast.get(s["speaker"], {}).get("ref"),
+            idx=len(segs), speaker=speaker, emotion=emotion or "neutral", kind=kind,
+            raw_text=raw, speak_text=speak,
+            nonverbal=[voc.nonverbal_tag] if (voc and voc.nonverbal_tag) else [],
+            intensity=voc.intensity if voc else 0.0,
+            ref=cast.get(speaker, {}).get("ref"),
         ))
+
+    for s in data["segments"]:
+        sp, emo, kind, raw = s["speaker"], s.get("emotion"), s.get("kind", "dialogue"), s["text"]
+        whole = normalize_vocalization(raw.strip().strip("*"))
+        lead = _re.match(r"^\s*[\"'*_]*([A-Za-z]{2,10})[*_\"']*[.,!?\-]*\s+(.+)$", raw)
+
+        if whole and whole.is_known and sp != "NARRATOR":
+            if emotive:
+                add(sp, emo, kind, raw, whole.spoken or whole.surface, whole)
+            else:
+                add("NARRATOR", None, "caption", raw, f"{_subject(sp)} {whole.narration}.", whole)
+            continue
+
+        if lead and not emotive:
+            v = normalize_vocalization(lead.group(1))
+            if v and v.is_known:
+                if v.prefer_narration:
+                    add("NARRATOR", None, "caption", raw, f"{_subject(sp)} {v.narration}.", v)
+                    add(sp, emo, kind, raw, lead.group(2).strip())
+                else:
+                    add(sp, emo, kind, raw, f"{v.spoken}. {lead.group(2).strip()}", v)
+                continue
+
+        if lead and emotive:
+            v = normalize_vocalization(lead.group(1))
+            if v and v.is_known:
+                add(sp, emo, kind, raw, f"{v.spoken or v.surface}. {lead.group(2).strip()}"
+                    if v.spoken else raw, v)
+                continue
+
+        add(sp, emo, kind, raw, raw)
     return data, segs
 
 

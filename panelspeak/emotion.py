@@ -149,3 +149,57 @@ def merge_vocalizations(segments: list[Segment]) -> list[Segment]:
         out.append(seg)
         i += 1
     return out
+
+
+_LEADING_VOC = re.compile(
+    r"^\s*[\"'*_(]*\s*([A-Za-z]{2,10})[*_)\"']*[.,!?\-]*\s+(.+)$"
+)
+
+
+def _subject_for(speaker: str) -> str:
+    if not speaker or speaker == "NARRATOR":
+        return "Someone"
+    # "BLACK HAND" -> "Black Hand"
+    return " ".join(w.capitalize() for w in speaker.split())
+
+
+def render_for_tts(segments: list[Segment], *, emotive_engine: bool = False) -> list[Segment]:
+    """Rewrite vocalizations for a plain (non-emotive) TTS engine like Kokoro.
+
+    * a segment that is *only* a noise, spoken by a character -> a NARRATOR
+      action beat ("Hal Jordan screamed.")
+    * a dialogue line that *opens* with a noise -> either keep a clean short
+      interjection ("Tsk. ...") or, for breathy/wordless noises, lift it into a
+      NARRATOR beat before the line and drop it from the dialogue.
+
+    With ``emotive_engine=True`` (Chatterbox/Orpheus/VibeVoice) the noises are
+    left in place for the engine to act on.
+    """
+    if emotive_engine:
+        return segments
+
+    out: list[Segment] = []
+    for seg in segments:
+        if seg.speaker == "NARRATOR":
+            out.append(seg)
+            continue
+
+        if _is_pure_vocalization(seg.text):
+            voc = normalize_vocalization(re.sub(r"[.!?,\-]+", " ", seg.text).split()[0])
+            out.append(Segment("NARRATOR", f"{_subject_for(seg.speaker)} {voc.narration}."))
+            continue
+
+        m = _LEADING_VOC.match(seg.text)
+        if m:
+            voc = normalize_vocalization(m.group(1))
+            rest = m.group(2).strip()
+            if voc and voc.is_known and rest:
+                if voc.prefer_narration:
+                    out.append(Segment("NARRATOR", f"{_subject_for(seg.speaker)} {voc.narration}."))
+                    out.append(Segment(seg.speaker, rest, seg.emotion))
+                else:
+                    out.append(Segment(seg.speaker, f"{voc.spoken}. {rest}", seg.emotion))
+                continue
+
+        out.append(seg)
+    return out

@@ -54,7 +54,7 @@ def _decode(codes: list[int], snac: SNAC) -> np.ndarray:
 
 
 def main() -> None:
-    _, segs = load_passage()
+    _, segs = load_passage(emotive=True)
     tok = AutoTokenizer.from_pretrained(MODEL)
     model = AutoModelForCausalLM.from_pretrained(MODEL, torch_dtype=torch.bfloat16,
                                                  device_map="cuda")

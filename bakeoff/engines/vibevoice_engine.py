@@ -25,7 +25,7 @@ BUILTIN = ["Alice", "Frank", "Carter", "Maya"]  # fallback speaker names
 
 
 def main() -> None:
-    data, segs = load_passage()
+    data, segs = load_passage(emotive=True)
 
     speakers = list(data["cast"].keys())
     sp_index = {name: i for i, name in enumerate(speakers)}
