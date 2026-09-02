@@ -26,11 +26,17 @@ UV="$(command -v uv || echo "$HOME/.local/bin/uv")"
 declare -A DEPS=(
   [piper]=""
   [kokoro]="kokoro soundfile numpy"
-  [chatterbox]="chatterbox-tts torchaudio"
+  [chatterbox]="chatterbox-tts"
   [orpheus]="transformers snac soundfile numpy accelerate"
   [vibevoice]="vibevoice-community soundfile accelerate"
 )
-declare -A NEEDS_TORCH=([kokoro]=1 [chatterbox]=1 [orpheus]=1 [vibevoice]=1)
+# these import torch and run on the GPU -> need the cu128 (Blackwell/sm_120) build
+declare -A NEEDS_TORCH=([chatterbox]=1 [orpheus]=1 [vibevoice]=1)
+declare -A NEEDS_TORCHAUDIO=([chatterbox]=1 [vibevoice]=1)
+# per-engine fixups run after deps are installed ($V = venv path)
+declare -A POSTSETUP=(
+  [kokoro]='"$V/bin/python" -m spacy download en_core_web_sm'
+)
 
 want=()
 case "${1:-tier1}" in
@@ -65,15 +71,29 @@ run_engine() {
   local eng="$1"
   local venv="$VENVS/$eng"
   echo "=== $eng ==="
-  if [[ ! -x "$venv/bin/python" ]]; then
+  if [[ ! -e "$venv/.ready" ]]; then
     mk_venv "$venv"
-    if [[ -n "${NEEDS_TORCH[$eng]:-}" ]]; then
-      pip_install "$venv" --index-url "$TORCH_INDEX" torch || pip_install "$venv" torch
-    fi
+    pip_install "$venv" pip setuptools wheel
     if [[ -n "${DEPS[$eng]}" ]]; then
       # shellcheck disable=SC2086
       pip_install "$venv" ${DEPS[$eng]}
     fi
+    if [[ -n "${NEEDS_TORCH[$eng]:-}" ]]; then
+      # engine deps often pull a PyPI torch that lacks Blackwell kernels;
+      # force the cu128 build in last so it wins.
+      local ta=""
+      [[ -n "${NEEDS_TORCHAUDIO[$eng]:-}" ]] && ta="torchaudio"
+      # shellcheck disable=SC2086
+      pip_install "$venv" --upgrade --force-reinstall --index-url "$TORCH_INDEX" torch $ta
+      "$venv/bin/python" - <<'PY'
+import torch, sys
+print("torch", torch.__version__, "cuda", torch.version.cuda, "ok", torch.cuda.is_available())
+sys.exit(0 if torch.cuda.is_available() else 1)
+PY
+    fi
+    local V="$venv"
+    [[ -n "${POSTSETUP[$eng]:-}" ]] && eval "${POSTSETUP[$eng]}"
+    touch "$venv/.ready"
   fi
   ( cd "$HERE" && PYTHONPATH="$HERE" "$venv/bin/python" "engines/${eng}_engine.py" )
 }
