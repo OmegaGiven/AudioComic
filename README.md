@@ -112,6 +112,22 @@ Each phase is resumable -- rerunning a script picks up where it left off
 `voice_map.json` inside the work directory) rather than redoing completed
 work.
 
+## Development
+
+`panelspeak/` holds the deterministic logic that wraps the model calls
+(onomatopoeia lexicon, panel-text classification, vocalization attribution,
+the emotion-hint line format). It has no model or network dependency.
+
+```bash
+pip install -r requirements-dev.txt
+pytest                       # unit + classification + corpus + regression
+pytest -m llm tests/eval     # opt-in model-quality checks, needs a live stack
+```
+
+`tests/README.md` explains the layout and, importantly, the workflow for
+**adding a regression case every time a new comic surfaces a problem** --
+that's how the tool is expected to improve.
+
 ## Notes
 
 - The vision-analysis and narrative-generation phases are the slow parts
