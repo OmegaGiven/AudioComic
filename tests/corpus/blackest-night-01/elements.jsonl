@@ -1,0 +1,13 @@
+# Hand-authored seed cases from Blackest Night #1. See case.md.
+{"panel": "page004_panel02", "text": "KRAKKA-THOOM", "raw_label": "DIALOGUE", "in_bubble": false, "lettering": "display", "area_ratio": 0.35, "expect_kind": "SFX"}
+{"panel": "page009_panel01", "text": "THWSSSH", "raw_label": "UNKNOWN", "in_bubble": false, "lettering": "display", "area_ratio": 0.22, "expect_kind": "SFX"}
+{"panel": "page012_panel03", "text": "BOOM", "raw_label": "DIALOGUE", "in_bubble": false, "lettering": "display", "area_ratio": 0.41, "expect_kind": "SFX"}
+{"panel": "page006_panel00", "text": "tsk", "raw_label": "SFX", "in_bubble": true, "bubble_id": "b1", "bubbles": [{"id": "b1", "owner": "BLACK HAND", "bbox": [40, 20, 120, 90]}], "bbox": [70, 40, 24, 14], "expect_kind": "VOCALIZATION", "expect_speaker": "BLACK HAND"}
+{"panel": "page006_panel01", "text": "You should be honored. You get to be a part of it.", "raw_label": "DIALOGUE", "in_bubble": true, "bubble_id": "b2", "bubbles": [{"id": "b2", "owner": "BLACK HAND"}], "expect_kind": "DIALOGUE"}
+{"panel": "page018_panel02", "text": "aaaah", "raw_label": "DIALOGUE", "in_bubble": true, "bubble_id": "b3", "bubbles": [{"id": "b3", "owner": null}], "expect_kind": "VOCALIZATION", "expect_speaker": null}
+{"panel": "page021_panel00", "text": "ugh", "raw_label": "SFX", "in_bubble": false, "lettering": "normal", "area_ratio": 0.03, "bbox": [100, 100, 20, 12], "panel_diagonal": 620, "characters": [{"name": "HAL JORDAN", "bbox": [108, 104, 34, 70], "mouth_open": true}], "expect_kind": "VOCALIZATION", "expect_speaker": "HAL JORDAN"}
+{"panel": "page015_panel01", "text": "hmph", "raw_label": "SFX", "in_bubble": true, "bubble_id": "b4", "bubbles": [{"id": "b4", "owner": "SINESTRO"}], "expect_kind": "VOCALIZATION", "expect_speaker": "SINESTRO"}
+{"panel": "page019_panel00", "text": "Barry, behind you!", "raw_label": "DIALOGUE", "in_bubble": true, "bubble_id": "b6", "bubbles": [{"id": "b6", "owner": "HAL JORDAN"}], "expect_kind": "DIALOGUE"}
+{"panel": "page024_panel01", "text": "*sigh*", "raw_label": "SFX", "in_bubble": true, "bubble_id": "b5", "bubbles": [{"id": "b5", "owner": "HAL JORDAN"}], "expect_kind": "VOCALIZATION", "expect_speaker": "HAL JORDAN"}
+{"panel": "page000_panel00", "text": "Space Sector 2814. The planet Earth.", "raw_label": "CAPTION", "in_bubble": false, "expect_kind": "CAPTION"}
+{"panel": "page017_panel00", "text": "Across the world, the dead began to stir.", "raw_label": "CAPTION", "in_bubble": false, "expect_kind": "CAPTION"}

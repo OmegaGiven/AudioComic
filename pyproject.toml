@@ -1,0 +1,26 @@
+# AudioComic is run as scripts, not installed as a package (see README).
+# This file only configures the dev tooling.
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"
+markers = [
+    "llm: exercises a real language/vision/TTS model (opt-in, not in CI)",
+    "integration: talks to a real external endpoint (opt-in, not in CI)",
+    "slow: takes more than a couple of seconds",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# the numbered scripts are linted/cleaned in the refactor branch, not here
+extend-exclude = ["scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["B011"]
