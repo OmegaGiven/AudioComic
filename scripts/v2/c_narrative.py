@@ -125,31 +125,41 @@ def page_texts(page, names):
         if not txt:
             continue
         spk = t.get("speaker")
-        # Magi's is_essential flag is noisy: it drops real dialogue (keep those
-        # -- they have a speaker) but it's right about junk fragments. So only
-        # trust a False when the text is also short and unattributed.
-        if not t.get("essential", True) and not spk and len(txt.split()) < 5:
+        essential = t.get("essential", True)
+        # Magi's is_essential flag is noisy in both directions. Drop a
+        # non-essential line only when it's *also* short (a sign / label /
+        # OCR fragment), whether or not Magi stuck a speaker on it.
+        if not essential and len(txt.split()) < 5:
             continue
-        # SFX slipped through OCR -> drop
-        if refine_kind("SFX" if not spk else "DIALOGUE", txt,
-                       in_bubble=bool(spk)) is ElementKind.SFX:
+        # SFX lettering: all-caps blurt, or panelspeak says SFX
+        letters = re.sub(r"[^A-Za-z]", "", txt)
+        allcaps_blurt = (txt == txt.upper() and len(txt.split()) == 1
+                         and 2 <= len(letters) <= 8)
+        if allcaps_blurt or refine_kind(
+                "SFX" if not spk else "DIALOGUE", txt, in_bubble=bool(spk)) is ElementKind.SFX:
             continue
+        # a "dialogue" line that reads as third-person narration is a mis-
+        # attributed caption -> send it to the narrator
+        if spk and re.search(r"\b(their|his|her|the .+ of|unmarked grave)\b", txt) \
+                and not re.search(r"\b(I|me|my|you|your|we|our)\b", txt):
+            spk = None
         if spk and spk.startswith("Character"):
             spk = names.get(spk, spk)
         pidx = t.get("panel_index") if t.get("panel_index") is not None else 999
         if spk:
-            items.append((pidx, "DIALOGUE", spk, txt))
+            items.append((pidx, "DIALOGUE", spk, txt, essential))
         else:
-            # unattributed -> narration box (location captions, off-panel voice-over)
-            items.append((pidx, "NARRATION", "NARRATOR", txt))
+            items.append((pidx, "NARRATION", "NARRATOR", txt, essential))
     items.sort(key=lambda x: x[0])
-    return items
+    return [it[:4] for it in items]
 
 
 def merge_runs(segs):
+    """Merge only consecutive NARRATOR lines. Leave every spoken line its own
+    segment so each bubble gets its own beat instead of running together."""
     out = []
     for s in segs:
-        if out and out[-1]["speaker"] == s["speaker"]:
+        if out and out[-1]["speaker"] == "NARRATOR" == s["speaker"]:
             out[-1]["text"] = f"{out[-1]['text']} {s['text']}".strip()
         else:
             out.append(dict(s))
@@ -170,10 +180,12 @@ def main():
     for page in structure["pages"]:
         pi = str(page["page_index"])
         texts = page_texts(page, names)
-        real_text = [t for t in texts if len(t[3]) > 3]
-        # front matter: one "panel", basically no text -> skip
-        if len(page["panels"]) <= 1 and len(real_text) <= 1:
-            print(f"page {pi}: front matter / empty ({len(real_text)} texts) -- skipped")
+        dialogue = [t for t in texts if t[1] == "DIALOGUE"]
+        narration = [t for t in texts if t[1] == "NARRATION" and len(t[3].split()) >= 4]
+        # front matter (cover / credits / recap): no attributed dialogue and no
+        # real narration-box text -- just logos and art.
+        if not dialogue and not narration:
+            print(f"page {pi}: front matter / no story text -- skipped")
             continue
 
         by_panel = {}
