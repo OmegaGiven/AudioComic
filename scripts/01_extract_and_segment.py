@@ -69,8 +69,10 @@ def classify_pages(page_files):
 
 
 def run_kumiko(image_path: str):
+    # kumiko runs with cwd=KUMIKO_DIR, so a relative image path would resolve
+    # against the wrong directory -- always hand it an absolute path.
     result = subprocess.run(
-        [str(VENV_PYTHON), "kumiko", "-i", image_path],
+        [str(VENV_PYTHON), "kumiko", "-i", str(Path(image_path).resolve())],
         cwd=str(KUMIKO_DIR), capture_output=True, text=True, timeout=60,
     )
     if result.returncode != 0:

@@ -26,6 +26,7 @@ _SCRIPT_FILES = {
     "vision": "02_vision_analyze.py",
     "narrative": "03_narrative.py",
     "tts": "04_tts_render.py",
+    "tts_kokoro": "04_tts_render_kokoro.py",
 }
 
 

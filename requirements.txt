@@ -1,5 +1,7 @@
+# Kumiko's line-parsing breaks on OpenCV >= 4.7 (HoughLinesP shape change)
+# and on NumPy 2.x -- pin both until Kumiko is patched or replaced.
 pillow
-opencv-python-headless
-numpy
+opencv-python-headless==4.6.0.66
+numpy<2
 requests
 pillow-heif

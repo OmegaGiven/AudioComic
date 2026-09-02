@@ -104,8 +104,18 @@ update `VOICE_POOLS` to match.
 python3 01_extract_and_segment.py path/to/issue.cbr work/issue-01
 python3 02_vision_analyze.py work/issue-01
 python3 03_narrative.py work/issue-01
-python3 04_tts_render.py work/issue-01 output/issue-01.wav
+python3 04_tts_render.py work/issue-01 output/issue-01.wav          # Piper
+# or, the Kokoro variant (more natural, needs `pip install -r requirements-kokoro.txt`):
+python3 04_tts_render_kokoro.py work/issue-01 output/issue-01.wav
 ```
+
+Stage 4 has two implementations kept in parallel so their output can be
+compared: **`04_tts_render.py`** (Piper, the original) and
+**`04_tts_render_kokoro.py`** (Kokoro-82M, chosen in the TTS bake-off --
+more natural prosody, still fast, plus onomatopoeia cleanup via
+`panelspeak`). They share the `voice_map.json` format but store different
+voice ids, so use separate work dirs (or delete `voice_map.json`) when
+switching engines on the same issue.
 
 Each phase is resumable -- rerunning a script picks up where it left off
 (tracked in `manifest.json`, `panel_analysis.json`, `narrative.json`, and

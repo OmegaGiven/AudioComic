@@ -1,0 +1,5 @@
+# Extra deps for the Kokoro stage-4 variant (04_tts_render_kokoro.py).
+# Pulls in torch; on an NVIDIA Blackwell card install a cu128 torch build first.
+-r requirements.txt
+kokoro
+soundfile
