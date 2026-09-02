@@ -30,6 +30,10 @@ def test_empty(k):
     assert k.clean_for_speech("   ") == ""
 
 
+def test_strips_parenthetical_stage_directions(k):
+    assert k.clean_for_speech("(whispering) I hear you out there") == "I hear you out there"
+
+
 # --- voice map: Kokoro voice ids, same stability guarantees ----------------
 
 @pytest.fixture
