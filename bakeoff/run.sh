@@ -40,13 +40,14 @@ case "${1:-tier1}" in
   *)         want=("$@") ;;
 esac
 
-mkdir -p "$HERE/refs" "$HERE/out"
+mkdir -p "$HERE/refs" "$HERE/out" "$VENVS"
 
 mk_venv() {
   local venv="$1"
   if [[ -n "$UV" ]]; then
-    "$UV" venv -q --python "$PYPIN" "$venv"
+    "$UV" venv -q --clear --python "$PYPIN" "$venv"
   else
+    rm -rf "$venv"
     python3 -m venv "$venv"
     "$venv/bin/pip" -q install --upgrade pip
   fi
@@ -54,7 +55,7 @@ mk_venv() {
 pip_install() {
   local venv="$1"; shift
   if [[ -n "$UV" ]]; then
-    VIRTUAL_ENV="$venv" "$UV" pip install -q "$@"
+    "$UV" pip install -q --python "$venv/bin/python" "$@"
   else
     "$venv/bin/pip" -q install "$@"
   fi

@@ -12,6 +12,8 @@ no reference clip needed.
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import soundfile as sf
 import torch
@@ -19,7 +21,9 @@ from _common import engine_out, finish, load_passage
 from snac import SNAC
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-MODEL = "canopylabs/orpheus-3b-0.1-ft"
+# canopylabs/orpheus-3b-0.1-ft is gated; this mirror is open. Override with
+# ORPHEUS_MODEL=... (and set HF_TOKEN) to use the official weights.
+MODEL = os.getenv("ORPHEUS_MODEL", "unsloth/orpheus-3b-0.1-ft")
 SR = 24000
 
 VOICE_FOR = {
