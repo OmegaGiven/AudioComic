@@ -26,7 +26,7 @@ UV="$(command -v uv || echo "$HOME/.local/bin/uv")"
 declare -A DEPS=(
   [piper]=""
   [kokoro]="kokoro soundfile numpy"
-  [chatterbox]="chatterbox-tts"
+  [chatterbox]="chatterbox-tts soundfile"
   [orpheus]="transformers snac soundfile numpy accelerate"
   [vibevoice]="vibevoice-community soundfile accelerate"
 )

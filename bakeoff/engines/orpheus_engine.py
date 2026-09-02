@@ -47,9 +47,10 @@ def _decode(codes: list[int], snac: SNAC) -> np.ndarray:
         l1.append(b[0])
         l2 += [b[1], b[4]]
         l3 += [b[2], b[3], b[5], b[6]]
-    layers = [torch.tensor(x, device=snac.device).unsqueeze(0) for x in (l1, l2, l3)]
+    dev = next(snac.parameters()).device
+    layers = [torch.tensor(x, device=dev).unsqueeze(0) for x in (l1, l2, l3)]
     with torch.inference_mode():
-        return snac.decode(layers).squeeze().cpu().numpy()
+        return snac.decode(layers).squeeze().cpu().numpy().astype(np.float32)
 
 
 def main() -> None:
@@ -78,7 +79,15 @@ def main() -> None:
                                  temperature=0.6, top_p=0.9, repetition_penalty=1.1,
                                  eos_token_id=128258)
         out_tokens = gen[0][ids.shape[1]:].tolist()
-        codes = [t - 128266 for t in out_tokens if 128266 <= t < 128266 + 4096]
+        if 128257 in out_tokens:                       # audio-stream start marker
+            out_tokens = out_tokens[out_tokens.index(128257) + 1:]
+        out_tokens = [t for t in out_tokens if t not in (128258, 128260, 128009)]
+        # each of the 7 positions in a frame has its own 4096-wide offset
+        codes = []
+        for j, t in enumerate(out_tokens):
+            c = t - 128266 - ((j % 7) * 4096)
+            if 0 <= c < 4096:
+                codes.append(c)
         codes = codes[: (len(codes) // 7) * 7]
         audio = _decode(codes, snac) if codes else np.zeros(SR // 2, dtype=np.float32)
 

@@ -13,7 +13,7 @@ project's own audiobook guidance).
 
 from __future__ import annotations
 
-import torchaudio as ta
+import soundfile as sf
 from _common import engine_out, finish, load_passage, ref_path
 from chatterbox.tts import ChatterboxTTS
 
@@ -46,7 +46,7 @@ def main() -> None:
             kwargs["audio_prompt_path"] = str(ref)
             cloned.add(seg.speaker)
         wav = model.generate(seg.speak_text, **kwargs)
-        ta.save(str(out), wav, model.sr)
+        sf.write(str(out), wav.squeeze(0).detach().cpu().numpy(), model.sr)
         wavs.append(out)
     finish("chatterbox",
            {"note": "MIT ~0.5B; exaggeration knob per emotion",
