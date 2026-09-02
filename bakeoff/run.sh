@@ -74,7 +74,7 @@ run_engine() {
       pip_install "$venv" ${DEPS[$eng]}
     fi
   fi
-  ( cd "$HERE" && PYTHONPATH="$HERE" "$venv/bin/python" "engines/$eng.py" )
+  ( cd "$HERE" && PYTHONPATH="$HERE" "$venv/bin/python" "engines/${eng}_engine.py" )
 }
 
 for eng in "${want[@]}"; do
