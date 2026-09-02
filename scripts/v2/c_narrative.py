@@ -62,6 +62,12 @@ def clean_line(t: str) -> str:
 def is_junk(t: str) -> bool:
     if JUNK_RE.search(t):
         return True
+    toks = t.split()
+    # creator credits: mixed-case name list, e.g. "Geoff JOHNS man REIS oclair ALBERT"
+    caps = [w for w in toks if len(w) >= 3 and w.isupper()]
+    title = [w for w in toks if len(w) >= 3 and w[0].isupper() and not w.isupper()]
+    if len(toks) <= 8 and len(caps) >= 2 and title:
+        return True
     letters = re.sub(r"[^A-Za-z]", "", t)
     if len(letters) < 2:
         return True
@@ -154,15 +160,33 @@ def page_texts(page, names):
     return [it[:4] for it in items]
 
 
+_INCOMPLETE_TAIL = re.compile(
+    r"\b(and|or|but|the|a|an|of|to|in|with|who|which|that|was|were|is|are|as|by|for)\s*$",
+    re.I,
+)
+
+
+def looks_incomplete(txt: str) -> bool:
+    """OCR fragment that trails off mid-phrase ('Thomas and his wife, who was')."""
+    t = txt.strip()
+    if t.endswith((".", "!", "?", '"', "”", "--")):
+        return False
+    return len(t.split()) < 7 and bool(_INCOMPLETE_TAIL.search(t))
+
+
 def merge_runs(segs):
-    """Merge only consecutive NARRATOR lines. Leave every spoken line its own
-    segment so each bubble gets its own beat instead of running together."""
+    """Merge only consecutive *generated* narration (two panels of description
+    with no dialogue between). Caption boxes (verbatim OCR) and every spoken
+    line stay their own segment."""
     out = []
     for s in segs:
-        if out and out[-1]["speaker"] == "NARRATOR" == s["speaker"]:
+        if (out and out[-1]["speaker"] == "NARRATOR" == s["speaker"]
+                and out[-1].get("_gen") and s.get("_gen")):
             out[-1]["text"] = f"{out[-1]['text']} {s['text']}".strip()
         else:
             out.append(dict(s))
+    for s in out:
+        s.pop("_gen", None)
     return out
 
 
@@ -190,6 +214,8 @@ def main():
 
         by_panel = {}
         for pidx, kind, spk, txt in texts:
+            if kind == "NARRATION" and looks_incomplete(txt):
+                continue  # drop trailing-off OCR fragments
             by_panel.setdefault(pidx, []).append((kind, spk, txt))
 
         segs = []
@@ -199,7 +225,7 @@ def main():
             desc = descriptions.get(pi, {}).get(str(pidx), "")
             narr = narrate_panel(desc)
             if narr:
-                segs.append({"speaker": "NARRATOR", "text": narr})
+                segs.append({"speaker": "NARRATOR", "text": narr, "_gen": True})
             for _kind, spk, txt in by_panel.get(pidx, []):
                 segs.append({"speaker": spk.upper() if spk == "NARRATOR" else spk,
                              "text": txt})
