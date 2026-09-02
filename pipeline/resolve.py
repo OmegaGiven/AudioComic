@@ -14,20 +14,36 @@ import sys
 
 from pipeline.comicdb import ComicDB, NameEvidence
 
-NAME = r"([A-Z][a-z]{2,15}(?:\s[A-Z][a-z]{2,15})?)"
-SELF_ID = re.compile(rf"\b(?:i am|i'm|call me|my name is|name's)\s+{NAME}", re.I)
-VOCATIVE = re.compile(rf"[,:]\s*{NAME}[.!?\"'”]*\s*$")
-NARRATION = re.compile(rf"^{NAME}\s+(?:said|knelt|stood|turned|raised|whispered|shouted|"
-                       r"replied|thought|watched|walked|ran|stared)")
-STOPWORDS = {"Yes", "No", "Sir", "Please", "Well", "Okay", "Now", "Hey", "Wait",
-             "The", "And", "But", "Not", "Look", "Stop", "Come", "Here", "There",
-             "Death", "God", "Space", "Sector", "First", "Some", "Thing", "Things"}
-WEIGHT = {"self_id": 1.0, "narration": 0.5, "vocative": 0.35, "printed": 0.8}
-BIND_THRESHOLD = 0.7
+# Comic dialogue is lettered ALL CAPS, so case can't tell a name from a word.
+# Match case-insensitively, then reject candidates that are common words.
+NAME = r"([A-Za-z][A-Za-z']{1,15}(?:\s[A-Za-z][A-Za-z']{1,15})?)"
+SELF_ID = re.compile(rf"\b(?:i am|i'?m|call me|my name is|name's|they call me)\s+{NAME}", re.I)
+VOCATIVE = re.compile(rf"[,:]\s+{NAME}[.!?\"'”]*\s*$")
+NARRATION = re.compile(rf"^\s*{NAME}\s+(?:said|knelt|stood|turned|raised|whispered|shouted|"
+                       r"replied|thought|watched|walked|ran|stared|grabbed|screamed)", re.I)
+
+_COMMON = set("""
+a an the and or but not so if then than as at by for from in into of on to up with
+i me my you your he she it we they him her them us our his hers its their this that
+these those here there now back away down out off over under again just only very
+yes no ok okay sure fine well hey wait stop look listen come go get got give take
+sorry please thanks thank sir maam man dude kid son dad mom mother father brother
+sister boss chief doctor captain sergeant lieutenant colonel general everyone
+everybody someone somebody nobody people friend buddy pal boy girl lady god hell
+damn christ lord jesus death dead alive alone lost cold hot warm dark light hungry
+tired scared afraid ready done gone home real true good bad better worse right wrong
+late early sick hurt fighting trying doing saying telling asking talking working
+looking waiting leaving staying calling dying running thinking coming going holding
+standing sitting moving turning falling rising warning begging hoping praying human
+family blood power willing able glad happy proud curious aware part what who where
+why how when which whose everything nothing something anything all none more most
+less least first last next each every any some both few many much such other same
+""".split())
 
 
 def _ok(name: str) -> bool:
-    return name.split()[0] not in STOPWORDS
+    words = [w.lower().strip(".'\"") for w in name.split()]
+    return bool(words) and not all(w in _COMMON for w in words)
 
 
 def collect(db: ComicDB) -> list[NameEvidence]:
@@ -41,21 +57,23 @@ def collect(db: ComicDB) -> list[NameEvidence]:
         if b.kind == "DIALOGUE" and b.entity:
             m = SELF_ID.search(text)
             if m and _ok(m.group(1)):
-                ev.append(NameEvidence(b.entity, panel, "self_id", text, m.group(1), WEIGHT["self_id"]))
-            if b.speaker_raw and b.speaker_raw.istitle() and _ok(b.speaker_raw):
-                ev.append(NameEvidence(b.entity, panel, "printed", text, b.speaker_raw, WEIGHT["printed"]))
+                ev.append(NameEvidence(b.entity, panel, "self_id", text, _title(m.group(1)), 1.0))
+            if b.speaker_raw and _ok(b.speaker_raw):
+                ev.append(NameEvidence(b.entity, panel, "printed", text, _title(b.speaker_raw), 1.0))
 
-        # vocative / narration: names the *addressee* or an actor. Bind only
-        # when we can point to exactly one candidate: another speaker in this
-        # panel, or -- for a small cast -- the sole other unbound entity.
         others = _present_entities(db, panel, exclude=b.entity)
         if not others:
             others = [e.id for e in db.entities() if e.id != b.entity and not e.name]
         for rx, kind in ((VOCATIVE, "vocative"), (NARRATION, "narration")):
             m = rx.search(text)
             if m and _ok(m.group(1)) and len(others) == 1:
-                ev.append(NameEvidence(others[0], panel, kind, text, m.group(1), WEIGHT[kind]))
+                ev.append(NameEvidence(others[0], panel, kind, text, _title(m.group(1)),
+                                       0.5 if kind == "narration" else 0.35))
     return ev
+
+
+def _title(name: str) -> str:
+    return " ".join(w.capitalize() for w in name.split())
 
 
 def _present_entities(db: ComicDB, panel_id: str, exclude: str | None) -> list[str]:
@@ -69,6 +87,14 @@ def bind(db: ComicDB, evidence: list[NameEvidence]) -> None:
     for e in evidence:
         by_entity.setdefault(e.entity, []).append(e)
 
+    # how often each candidate name-token shows up anywhere in dialogue --
+    # supporting signal that it's a real proper noun, not a one-off word
+    mentions: dict[str, int] = {}
+    for b in db.blocks():
+        if b.kind == "DIALOGUE":
+            for tok in re.findall(r"[A-Za-z']{3,}", b.text_raw):
+                mentions[tok.lower()] = mentions.get(tok.lower(), 0) + 1
+
     for ent in db.entities():
         if ent.id in db.overrides:
             db.bind_name(ent.id, db.overrides[ent.id], 1.0)
@@ -76,17 +102,28 @@ def bind(db: ComicDB, evidence: list[NameEvidence]) -> None:
         evs = by_entity.get(ent.id, [])
         if not evs:
             continue
-        # score per candidate name
         scores: dict[str, float] = {}
         kinds: dict[str, set] = {}
+        panels: dict[str, set] = {}
         for e in evs:
             scores[e.name] = scores.get(e.name, 0.0) + e.weight
             kinds.setdefault(e.name, set()).add(e.kind)
+            panels.setdefault(e.name, set()).add(e.panel)
         name, score = max(scores.items(), key=lambda kv: kv[1])
-        strong = "self_id" in kinds[name] or "printed" in kinds[name]
-        independent = len({e.panel for e in evs if e.name == name}) >= 2
-        if score >= BIND_THRESHOLD and (strong or independent):
-            db.bind_name(ent.id, name, min(1.0, score))
+
+        n_ev = len([e for e in evs if e.name == name])
+        n_panels = len(panels[name])
+        multiword = len(name.split()) >= 2
+        # supporting: every token of the name shows up in >=3 dialogue blocks
+        supported = all(mentions.get(w.lower(), 0) >= 3 for w in name.split())
+        strong = "printed" in kinds[name] or "self_id" in kinds[name]
+
+        # never bind on a lone weak signal. A self-identification or printed
+        # name counts if it's a full name or echoed elsewhere; otherwise need
+        # two independent references.
+        if (n_panels >= 2 and n_ev >= 2) or (strong and (multiword or supported)):
+            db.bind_name(ent.id, name,
+                         round(min(1.0, 0.4 + 0.2 * n_ev + 0.15 * n_panels), 2))
 
     _merge_aliases(db)
 

@@ -16,7 +16,7 @@ import re
 import sys
 
 from pipeline.comicdb import Block, ComicDB, Vision
-from pipeline.vision import VISION_MODEL, ask_vision
+from pipeline.vision import VISION_MODEL, ask_vision, looks_like_reasoning, strip_think
 
 PROMPT_V = 5
 PROMPT = """Describe this comic panel in 1-2 sentences: the scene, the people present and their actions and expressions. Refer to each person ONLY by appearance (clothing, build, posture) -- do not use any character name, hero name, villain name, or franchise, even one you recognise.
@@ -37,6 +37,7 @@ SFX_SHAPE = re.compile(r"^[A-Z][A-Z'\-]{1,10}[!?.]*$")
 
 def parse(text: str) -> tuple[str, list[tuple[str, str]]]:
     """-> (scene, [(kind, text)])  kind in CAPTION|SPEAKER"""
+    text = strip_think(text)
     scene_parts, lines = [], []
     for ln in text.splitlines():
         raw = ln.strip()
@@ -51,6 +52,9 @@ def parse(text: str) -> tuple[str, list[tuple[str, str]]]:
     scene = re.sub(r"^(here'?s?|description|scene|the panel shows|this panel( shows)?)[:,\s-]+",
                    "", scene, flags=re.I)
     scene = re.sub(r"\s+", " ", scene).strip()
+    # a scene that still reads as model reasoning is worse than none
+    if looks_like_reasoning(scene) or len(scene.split()) > 80:
+        scene = "" if looks_like_reasoning(scene) else " ".join(scene.split()[:80])
     return scene, [(k, t) for k, t in lines if t]
 
 

@@ -148,3 +148,44 @@ def test_assemble_unknown_speaker_is_reported_speech(tmp_path):
     nar = json.loads((tmp_path / "narrative.json").read_text())
     assert nar["3"][-1]["speaker"] == "NARRATOR"
     assert 'A voice says, "Who goes there?"' in nar["3"][-1]["text"]
+
+
+# --- regression: bugs the full-issue run exposed ------------------------
+
+def test_strip_think_unclosed_keeps_the_answer():
+    from pipeline.vision import strip_think
+    raw = ("<think> Got it, let's tackle this. The user wants a description...\n"
+           "the panel has a skull.\n"
+           "CAPTION: SOME THINGS ARE WORSE THAN DEATH\n"
+           "SPEAKER: I hear you.")
+    out = strip_think(raw)
+    assert "<think>" not in out and "let's tackle" not in out
+    assert out.startswith("CAPTION:")
+
+
+def test_parse_blanks_a_reasoning_scene():
+    scene, lines = transcribe.parse(
+        "Got it, let's break this down. The user wants...\nCAPTION: LATER.")
+    assert scene == "" and lines == [("CAPTION", "LATER.")]
+
+
+def test_resolve_rejects_allcaps_common_word_self_id(tmp_path):
+    db = _mini(tmp_path)
+    for i, txt in enumerate(["I AM HUNGRY.", "I'M SORRY--", "I AM TRYING--"]):
+        db.add_panel(Panel(id=f"p003_{i:02d}", page=3, index=i, image="x"))
+        db.replace_blocks_for_panel(f"p003_{i:02d}", [
+            Block(id=f"b{i}", panel=f"p003_{i:02d}", order=0, kind="DIALOGUE",
+                  text_raw=txt, entity="e1")])
+    ev = resolve.collect(db)
+    resolve.bind(db, ev)
+    assert db.entity("e1").name is None
+
+
+def test_resolve_full_name_self_id_still_binds(tmp_path):
+    db = _mini(tmp_path)
+    db.replace_blocks_for_panel("p003_00", [
+        Block(id="b1", panel="p003_00", order=0, kind="DIALOGUE",
+              text_raw="MY FATHER SAID, EVERYONE DIES. I AM WILLIAM HAND.", entity="e1")])
+    ev = resolve.collect(db)
+    resolve.bind(db, ev)
+    assert db.entity("e1").name == "William Hand"

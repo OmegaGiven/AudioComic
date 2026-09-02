@@ -9,18 +9,27 @@ import subprocess
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 VISION_MODEL = "qwen3-vl:8b"
 
-_THINK = re.compile(r"<think>.*?</think>", re.S | re.I)
+_THINK = re.compile(r"<think>.*?</think>\s*", re.S | re.I)
 _OPEN_THINK = re.compile(r"<think>.*", re.S | re.I)
+_ANSWER_LINE = re.compile(r"^\s*(?:CAPTION|SPEAKER)\s*:", re.M | re.I)
+_REASONING = re.compile(
+    r"<think>|let'?s (tackle|break this down|start|see|think)|the user wants|"
+    r"^\s*(got it|okay|alright|first,|now,|wait,|hmm)", re.I | re.M)
 
 
 def strip_think(text: str) -> str:
+    """Remove qwen3-vl reasoning. It ignores think:false and frequently emits
+    an unclosed <think> block; the real answer (CAPTION:/SPEAKER: lines) still
+    follows it, so anchor on the first answer line when there's no close tag."""
     text = _THINK.sub("", text)
-    # unclosed <think> that never terminated: drop it, keep anything after a
-    # blank line (the model usually answers after the reasoning)
     if "<think>" in text.lower():
-        tail = _OPEN_THINK.sub("", text)
-        text = tail if tail.strip() else text
+        m = _ANSWER_LINE.search(text)
+        text = text[m.start():] if m else _OPEN_THINK.sub("", text)
     return text.strip()
+
+
+def looks_like_reasoning(text: str) -> bool:
+    return bool(_REASONING.search(text or ""))
 
 
 def ask_vision(image_path: str, prompt: str, *, num_predict: int = 1200,
