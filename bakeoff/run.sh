@@ -7,24 +7,30 @@
 #   ./bakeoff/run.sh page            # only (re)build the comparison page
 #
 # Each engine gets its own venv under bakeoff/.venvs/<engine> so their deps
-# never collide. Models download on first run (cached by HuggingFace after).
-# Reference voice clips are optional: drop wavs in bakeoff/refs/ named to match
-# passage.json ("black_hand.wav", "hal_jordan.wav", "mera.wav", "narrator.wav").
+# never collide. If `uv` is on PATH it's used (and pins Python 3.12, since
+# the ML stack has no 3.14 wheels yet); otherwise falls back to python -m venv.
+# Models download on first run (cached by HuggingFace after). Reference voice
+# clips are optional: drop wavs in bakeoff/refs/ named to match passage.json.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENVS="$HERE/.venvs"
-PYBASE="${PYTHON:-python3}"
+PYPIN="${PYPIN:-3.12}"
+TORCH_INDEX="${TORCH_INDEX:-https://download.pytorch.org/whl/cu128}"
 TIER1=(piper kokoro chatterbox)
 TIER2=(orpheus vibevoice)
 
+UV="$(command -v uv || echo "$HOME/.local/bin/uv")"
+[[ -x "$UV" ]] || UV=""
+
 declare -A DEPS=(
-  [piper]=""                                             # uses ~/.local/opt/piper
+  [piper]=""
   [kokoro]="kokoro soundfile numpy"
   [chatterbox]="chatterbox-tts torchaudio"
-  [orpheus]="transformers snac torch soundfile numpy accelerate"
+  [orpheus]="transformers snac soundfile numpy accelerate"
   [vibevoice]="vibevoice-community soundfile accelerate"
 )
+declare -A NEEDS_TORCH=([kokoro]=1 [chatterbox]=1 [orpheus]=1 [vibevoice]=1)
 
 want=()
 case "${1:-tier1}" in
@@ -36,24 +42,39 @@ esac
 
 mkdir -p "$HERE/refs" "$HERE/out"
 
+mk_venv() {
+  local venv="$1"
+  if [[ -n "$UV" ]]; then
+    "$UV" venv -q --python "$PYPIN" "$venv"
+  else
+    python3 -m venv "$venv"
+    "$venv/bin/pip" -q install --upgrade pip
+  fi
+}
+pip_install() {
+  local venv="$1"; shift
+  if [[ -n "$UV" ]]; then
+    VIRTUAL_ENV="$venv" "$UV" pip install -q "$@"
+  else
+    "$venv/bin/pip" -q install "$@"
+  fi
+}
+
 run_engine() {
   local eng="$1"
   local venv="$VENVS/$eng"
   echo "=== $eng ==="
-  if [[ ! -d "$venv" ]]; then
-    "$PYBASE" -m venv "$venv"
-    "$venv/bin/pip" -q install --upgrade pip
+  if [[ ! -x "$venv/bin/python" ]]; then
+    mk_venv "$venv"
+    if [[ -n "${NEEDS_TORCH[$eng]:-}" ]]; then
+      pip_install "$venv" --index-url "$TORCH_INDEX" torch || pip_install "$venv" torch
+    fi
     if [[ -n "${DEPS[$eng]}" ]]; then
-      # torch first so the others resolve against the installed CUDA build
-      if [[ "${DEPS[$eng]}" == *torch* ]]; then
-        "$venv/bin/pip" -q install torch --index-url https://download.pytorch.org/whl/cu124 || \
-          "$venv/bin/pip" -q install torch
-      fi
       # shellcheck disable=SC2086
-      "$venv/bin/pip" -q install ${DEPS[$eng]}
+      pip_install "$venv" ${DEPS[$eng]}
     fi
   fi
-  ( cd "$HERE" && "$venv/bin/python" "engines/$eng.py" )
+  ( cd "$HERE" && PYTHONPATH="$HERE" "$venv/bin/python" "engines/$eng.py" )
 }
 
 for eng in "${want[@]}"; do
@@ -62,12 +83,7 @@ for eng in "${want[@]}"; do
   fi
 done
 
-# build the page with whatever engine venv is handy (needs only stdlib + _common)
-PAGE_PY="$PYBASE"
-for e in "${TIER1[@]}" "${TIER2[@]}"; do
-  [[ -x "$VENVS/$e/bin/python" ]] && PAGE_PY="$VENVS/$e/bin/python" && break
-done
-( cd "$HERE" && "$PAGE_PY" build_page.py )
+( cd "$HERE" && PYTHONPATH="$HERE" python3 build_page.py )
 
 echo
 echo "Done. Open:  $HERE/out/index.html"
