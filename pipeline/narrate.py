@@ -94,7 +94,10 @@ def _render_script(segs: list[dict]) -> str:
     return "\n".join(rows)
 
 
-_ROW_RE = re.compile(r"^\s*\[(\d+)\]\s*(?:SCENE:\s*)?(.*)$")
+_ROW_RE = re.compile(r"^\s*\[(\d+)\]\s*(.*)$")
+_ECHO_RE = re.compile(
+    r"^(rewritten sentence|rewrite|scene(\s*line)?(\s*\d+)?|here'?s?( the)?( rewrite)?)"
+    r"\s*[:.\-]?\s*", re.I)
 
 
 def _parse_script(text: str) -> dict[int, str]:
@@ -102,7 +105,7 @@ def _parse_script(text: str) -> dict[int, str]:
     for ln in text.splitlines():
         m = _ROW_RE.match(ln)
         if m:
-            out[int(m.group(1))] = m.group(2).strip()
+            out[int(m.group(1))] = _ECHO_RE.sub("", m.group(2).strip()).strip()
     return out
 
 
@@ -118,10 +121,10 @@ Rules:
 - Tighten -- do not expand.
 - To merge a SCENE line into the one before it, return it empty.
 
-Output ONLY the rewritten SCENE lines, one per line, as:
-[index] rewritten sentence
+Output ONLY the SCENE lines, one per line, each as its number in brackets then the rewritten sentence and nothing else, for example:
+[2] Rain sheets across the rooftop as the two figures square off.
 
-Nothing else -- no CAPTION lines, no dialogue lines, no commentary.
+No CAPTION lines, no dialogue lines, no labels, no commentary.
 
 PAGE:
 {script}
@@ -140,10 +143,11 @@ def _polish_page(segs: list[dict], allowed: set[str]) -> tuple[list[dict], str]:
     rewritten = _parse_script(resp)
 
     # the model only returns SCENE lines now, keyed by index -- it cannot
-    # touch a caption or a line of dialogue. Require it addressed most of them.
-    hit = [i for i in gen_idx if i in rewritten]
-    if len(hit) < max(1, len(gen_idx) - 1):
-        return segs, f"only rewrote {len(hit)}/{len(gen_idx)} scene lines"
+    # touch a caption or a line of dialogue. A line it skips keeps its
+    # deterministic text, so a partial rewrite is still a win.
+    hit = [i for i in gen_idx if i in rewritten and rewritten[i].strip()]
+    if not hit:
+        return segs, "nothing rewritten"
 
     # contract: no invented proper nouns, no ballooning
     old_words = sum(len(_WORD.findall(segs[i]["text"])) for i in gen_idx)

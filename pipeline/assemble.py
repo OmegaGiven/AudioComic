@@ -42,10 +42,15 @@ def looks_like_credits(texts: list[str]) -> bool:
     return frag / len(txts) >= 0.7
 
 
+_LEADIN = re.compile(r"^(in this (comic ?book )?(panel|image|scene),?|the (panel|image) shows|"
+                     r"this (comic ?book )?panel( shows)?)\s*", re.I)
+
+
 def clean(t: str) -> str:
     t = re.sub(r"\([^)]*\)", "", t)
     t = re.sub(r"\s+", " ", t).strip().strip('"“” ')
-    return t
+    t = _LEADIN.sub("", t)
+    return t[:1].upper() + t[1:] if t else t
 
 
 def _norm(t: str) -> str:

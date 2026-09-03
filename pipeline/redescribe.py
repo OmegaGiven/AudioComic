@@ -86,7 +86,8 @@ def main() -> None:
         # the model sometimes appends CAPTION:/SPEAKER: lines anyway -- cut them
         scene = re.split(r"\b(?:CAPTION|SPEAKER)\s*:", scene)[0]
         scene = re.sub(r"\s+", " ", scene).strip().strip('"“”')
-        scene = re.sub(r"^(in this panel,?|the panel shows|this panel( shows)?|"
+        scene = re.sub(r"^(in this (comic ?book )?(panel|image|scene),?|"
+                       r"the (panel|image) shows|this (comic ?book )?panel( shows)?|"
                        r"here is [^:]*:?)\s*", "", scene, flags=re.I)
         scene = scene[:1].upper() + scene[1:] if scene else scene
         db.set_redescribe(p.id, scene, sig)
