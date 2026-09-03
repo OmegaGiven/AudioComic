@@ -36,8 +36,11 @@ GENDER_MODEL = "devstral:24b"
 
 SAMPLE_RATE = 24000
 NARRATOR_VOICE = "af_heart"
-# an unidentified speaker ("A VOICE") -- one fixed, distinct-from-narrator voice
+# unidentified speakers ("A VOICE", "A SECOND VOICE", ...) -- a small pool,
+# round-robined so a back-and-forth between unnamed characters isn't monotone
 UNKNOWN_VOICE = "am_onyx"
+UNKNOWN_POOL = ["am_onyx", "af_sky", "am_echo", "bf_alice", "am_eric"]
+_UNKNOWN_RE = re.compile(r"^(A|ANOTHER|THE)\s+\w*\s*VOICE$|^A VOICE$", re.I)
 # gender x age-tone -> a small pool of Kokoro voices, round-robined so a big
 # cast still gets distinct voices. https://huggingface.co/hexgrad/Kokoro-82M
 VOICE_POOLS = {
@@ -123,8 +126,9 @@ def load_voice_map(work_dir: Path, speakers: set) -> dict:
             if speaker == "NARRATOR":
                 voice_map[speaker] = NARRATOR_VOICE
                 continue
-            if speaker == "A VOICE":
-                voice_map[speaker] = UNKNOWN_VOICE
+            if _UNKNOWN_RE.match(speaker):
+                used = sum(1 for v in voice_map.values() if v in UNKNOWN_POOL)
+                voice_map[speaker] = UNKNOWN_POOL[used % len(UNKNOWN_POOL)]
                 continue
             cls = classes.get(speaker.upper())
             if cls is None:

@@ -58,15 +58,28 @@ def parse(text: str) -> tuple[str, list[tuple[str, str]]]:
     return scene, [(k, t) for k, t in lines if t]
 
 
+_NOT_SFX = set("""yes no ok okay go stop wait run hide help look listen die dead now here
+there why how what who when please sorry thanks god hell damn move back down hey mom dad
+sir maam love hate fire aim duck jump left right yeah nope hi bye""".split())
+
+
+def _classify(kind: str, text: str) -> str:
+    """CAPTION | DIALOGUE | SFX. A lone all-caps token that isn't a real
+    word or a short sentence is a sound effect, whatever box the model
+    labelled it ("FLASH", "BOOM!", "SUK")."""
+    w = text.strip()
+    lone = len(w.split()) == 1
+    bare = re.sub(r"[^A-Za-z]", "", w).lower()
+    sentence_ish = (w.endswith((".", "?")) and re.search(r"[AEIOUaeiou]", w) and len(bare) >= 3)
+    if lone and SFX_SHAPE.match(w) and not sentence_ish and bare not in _NOT_SFX:
+        return "SFX"
+    return "CAPTION" if kind == "CAPTION" else "DIALOGUE"
+
+
 def to_blocks(db: ComicDB, panel_id: str, lines: list[tuple[str, str]]) -> list[Block]:
     out = []
     for order, (kind, text) in enumerate(lines):
-        if kind == "CAPTION":
-            b_kind = "CAPTION"
-        elif SFX_SHAPE.match(text) and len(text.split()) == 1:
-            b_kind = "SFX"
-        else:
-            b_kind = "DIALOGUE"
+        b_kind = _classify(kind, text)
         out.append(Block(id=db.next_block_id(), panel=panel_id, order=order,
                          kind=b_kind, text_raw=text,
                          text_clean=re.sub(r"\s+", " ", text).strip()))

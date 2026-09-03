@@ -71,20 +71,31 @@ def dedupe(segs: list[dict]) -> list[dict]:
     return out
 
 
+def _unfinished(t: str) -> bool:
+    """The text reads as a fragment continued on the next line/box."""
+    t = t.strip().rstrip("\"'”’)")
+    return bool(re.search(r"[,:;]$|[-—]$", t)) or not re.search(r"[.?!]$", t)
+
+
 def coalesce_blocks(blocks: list):
     """Per-panel OCR splits one caption box / one speech balloon across its
-    lettered lines. Re-join a run of same-kind, same-entity blocks into one
-    (space-joined -- the fragments already carry their own punctuation)."""
+    lettered lines. Re-join a run of same-kind blocks into one, but only
+    while the running text is clearly unfinished -- so two separate caption
+    boxes, or two people's balloons, stay apart."""
     out = []
     for b in blocks:
-        if (out and out[-1].kind == b.kind == "CAPTION") or (
-                out and out[-1].kind == b.kind == "DIALOGUE"
-                and out[-1].entity == b.entity):
-            j = out[-1]
+        j = out[-1] if out else None
+        joinable = (
+            j is not None and j.kind == b.kind and j.kind in ("CAPTION", "DIALOGUE")
+            and (j.entity == b.entity or (not j.entity and not b.entity))
+            and _unfinished(j.text_raw)
+        )
+        if joinable:
             left = re.sub(r"[-—]+\s*$", "", j.text_raw.rstrip())
             right = re.sub(r"^\s*[-—]+", "", b.text_raw.lstrip())
             j.text_raw = re.sub(r"\s+", " ", f"{left} {right}").strip()
             j.text_clean = j.text_raw
+            j.entity = j.entity or b.entity
         else:
             out.append(b)
     return out
@@ -93,6 +104,55 @@ def coalesce_blocks(blocks: list):
 def looks_third_person(t: str) -> bool:
     return bool(re.search(r"\b(their|his|her)\b", t) and
                not re.search(r"\b(I|me|my|you|your|we|our)\b", t))
+
+
+_SAFE_CAPS = set("""A An The And But Or So If Then As At By For From In Into Of On To Up With
+He She It They We You His Her Its Their Our My Your This That There Here Now When While After
+Before Behind Above Below Beside Between Near Over Under Through Across Amid Amidst Among Around
+Against Atop Within Without Beyond Beneath Toward Towards Suddenly Meanwhile Later Nearby Outside
+Inside Somewhere Nothing Something Someone Everyone Nobody One Two Three Four Five Six Seven
+Monday Tuesday Wednesday Thursday Friday Saturday Sunday January February March April May June
+July August September October November December Several Many Both Each Every All Some Two""".split())
+_PROPER = re.compile(r"\b([A-Z][a-z]{2,}|[A-Z]{3,})\b")
+
+
+def scene_allowed(db: ComicDB) -> set[str]:
+    """Proper nouns a scene line is allowed to name: resolved character names,
+    plus any proper noun already lettered in a caption or a balloon."""
+    ok = set(w.lower() for w in _SAFE_CAPS)
+    for e in db.entities():
+        if e.name:
+            ok.update(w.lower() for w in re.findall(r"[A-Za-z]+", e.name))
+    for b in db.blocks():
+        if b.kind in ("CAPTION", "DIALOGUE"):
+            ok.update(w.lower() for w in _PROPER.findall(b.text_raw))
+    return ok
+
+
+def strip_unknown_names(text: str, allowed: set[str]) -> str:
+    """Remove a proper noun the vision model invented for a character
+    ("...the figure, Abin Sur, lies...") -- keep the sentence, drop the name."""
+    def repl(m: re.Match) -> str:
+        tok = m.group(1)
+        if tok.lower() in allowed:
+            return tok
+        pre = text[:m.start()].rstrip()
+        if pre and pre[-1] not in ".!?:\"":          # mid-sentence -> a name
+            return ""
+        nxt = text[m.end():].lstrip()[:1]
+        return "" if nxt.isupper() else tok          # "Gotham City" phrase
+    out = _PROPER.sub(repl, text)
+    out = re.sub(r"\s*,\s*,", ",", out)
+    out = re.sub(r"\(\s*\)|\bthe\s*,", "the", out)
+    out = re.sub(r"\s{2,}", " ", out).replace(" ,", ",").replace(" .", ".")
+    out = re.sub(r",\s*(and\b|lies\b|stands\b|is\b|was\b|walks\b)", r" \1", out)
+    # a phrase left dangling by a removed name
+    out = re.sub(r"\b(bearing the name|which reads|labell?ed|named|marked|the words?)\s*[.,]?\s*$",
+                 "", out, flags=re.I).strip(" ,")
+    out = re.sub(r",?\s*(with|and)\s*$", "", out, flags=re.I)
+    if out and not out.endswith((".", "!", "?", '"')):
+        out += "."
+    return out
 
 
 def sfx_seg(text: str, prev_speaker: str):
@@ -108,9 +168,10 @@ def merge(segs: list[dict]) -> list[dict]:
     out: list[dict] = []
     for s in segs:
         same = out and out[-1]["speaker"] == s["speaker"]
-        gen_run = same and out[-1].get("_gen") and s.get("_gen")
-        voice_run = same and s["speaker"] == "A VOICE"
-        if gen_run or voice_run:
+        # merge only consecutive generated scene lines. Dialogue -- including
+        # an unknown "A VOICE" -- stays one segment per line: joining two
+        # different speakers' balloons was producing run-on gibberish.
+        if same and out[-1].get("_gen") and s.get("_gen"):
             joiner = "" if out[-1]["text"].endswith((".", "!", "?", '"')) else "."
             out[-1]["text"] = f"{out[-1]['text']}{joiner} {s['text']}".strip()
         else:
@@ -129,7 +190,9 @@ def main() -> None:
     work_dir = Path(sys.argv[1])
     db = ComicDB.load(work_dir)
     front = {p.index for p in db.pages() if p.is_front_matter}
+    allowed = scene_allowed(db)
 
+    _VOICE = ["A VOICE", "A SECOND VOICE", "A THIRD VOICE", "A FOURTH VOICE"]
     narrative: dict[str, list[dict]] = {}
     for page in sorted(db.pages(), key=lambda p: p.index):
         if page.index in front:
@@ -145,9 +208,12 @@ def main() -> None:
             continue
 
         segs: list[dict] = []
+        voice_ord: dict[str, int] = {}
         for pn in panels:
             if pn.scene and len(pn.scene.split()) >= 4:
-                segs.append({"speaker": "NARRATOR", "text": clean(pn.scene), "_gen": True})
+                sc = strip_unknown_names(clean(pn.scene), allowed)
+                if len(sc.split()) >= 4:
+                    segs.append({"speaker": "NARRATOR", "text": sc, "_gen": True})
             prev = segs[-1]["speaker"] if segs else "NARRATOR"
             for b in coalesce_blocks(db.blocks(panel=pn.id)):
                 txt = clean(b.text_clean or b.text_raw)
@@ -170,10 +236,15 @@ def main() -> None:
                         segs.append({"speaker": "NARRATOR", "text": txt})
                         prev = "NARRATOR"
                     else:
-                        # unknown speaker -> a distinct voice, line spoken
-                        # verbatim (no "a voice says" wrapper read by the narrator)
-                        segs.append({"speaker": "A VOICE", "text": txt.strip('"“” ')})
-                        prev = "A VOICE"
+                        # unknown speaker -> a distinct voice per clustered
+                        # character, so a back-and-forth doesn't collapse to one
+                        if b.entity:
+                            n = voice_ord.setdefault(b.entity, len(voice_ord))
+                            spk = _VOICE[n] if n < len(_VOICE) else "ANOTHER VOICE"
+                        else:
+                            spk = "A VOICE"
+                        segs.append({"speaker": spk, "text": txt.strip('"“” ')})
+                        prev = spk
 
         narrative[str(page.index)] = merge(dedupe(segs))
 
