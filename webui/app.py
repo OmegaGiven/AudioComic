@@ -20,8 +20,8 @@ ALLOWED = {".cbz", ".cbr", ".pdf", ".zip"}
 
 app = FastAPI(title="AudioComic Studio")
 store = JobStore()
-store.reconcile()
 runner = Runner(store)
+store.reconcile(runner)
 
 
 @app.get("/", response_class=HTMLResponse)

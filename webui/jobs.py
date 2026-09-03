@@ -90,30 +90,43 @@ class JobStore:
                 out.append(j)
         return out
 
-    def reconcile(self) -> None:
+    def reconcile(self, runner: Runner | None = None) -> None:
         """On startup: a job left 'running' by a server restart is orphaned.
-        Finish it from disk if the render landed, else mark it failed."""
+        If its pipeline process is still alive, re-attach a monitor; else
+        finish it from disk, or mark it failed."""
         for job in self.list():
             if job.status != "running":
                 continue
-            wav = job.dir / "out.wav"
-            mp3 = next((job.dir / "work").glob("*.mp3"), None)
-            if wav.exists() and mp3:
-                dst = job.dir / mp3.name
-                dst.write_bytes(mp3.read_bytes())
-                job.mp3, job.status, job.percent = mp3.name, "done", 100
-                job.phase, job.phase_label = "done", "Finished"
-                try:
-                    import wave
-                    with wave.open(str(wav), "rb") as w:
-                        job.duration_s = round(w.getnframes() / w.getframerate(), 1)
-                except Exception:
-                    pass
-            else:
-                job.status = "failed"
-                job.error = "The server restarted while this comic was generating."
-            job.finished = time.time()
-            job.save()
+            if _pipeline_alive(job.id):
+                if runner:
+                    runner.reattach(job.id)
+                continue
+            _finalize(job, "The server restarted while this comic was generating.")
+
+
+def _pipeline_alive(jid: str) -> bool:
+    r = subprocess.run(["pgrep", "-f", f"run.sh .*jobs/{jid}/"],
+                       capture_output=True, text=True)
+    return r.returncode == 0
+
+
+def _finalize(job: Job, fail_reason: str) -> None:
+    wav = job.dir / "out.wav"
+    mp3 = next((job.dir / "work").glob("*.mp3"), None)
+    if wav.exists() and mp3:
+        (job.dir / mp3.name).write_bytes(mp3.read_bytes())
+        job.mp3, job.status, job.percent = mp3.name, "done", 100
+        job.phase, job.phase_label = "done", "Finished"
+        try:
+            import wave
+            with wave.open(str(wav), "rb") as w:
+                job.duration_s = round(w.getnframes() / w.getframerate(), 1)
+        except Exception:
+            pass
+    else:
+        job.status, job.error = "failed", fail_reason
+    job.finished = time.time()
+    job.save()
 
 
 _PHASE_RE = re.compile(r"^==\s*([a-z]+)")
@@ -134,18 +147,32 @@ class Runner:
         return self._current is not None
 
     def start(self, job: Job) -> None:
-        threading.Thread(target=self._run, args=(job.id,), daemon=True).start()
+        threading.Thread(target=self._run, args=(job.id, self._execute),
+                         daemon=True).start()
 
-    def _run(self, jid: str) -> None:
+    def reattach(self, jid: str) -> None:
+        """A pipeline still running after a server restart -- wait it out and
+        finalize from disk (progress won't update, but the job completes)."""
+        threading.Thread(target=self._run, args=(jid, self._wait_out),
+                         daemon=True).start()
+
+    def _run(self, jid: str, fn) -> None:
         with self._lock:
             if self._current:
                 return
             self._current = jid
         try:
-            self._execute(jid)
+            fn(jid)
         finally:
             with self._lock:
                 self._current = None
+
+    def _wait_out(self, jid: str) -> None:
+        while _pipeline_alive(jid):
+            time.sleep(5)
+        job = self.store.get(jid)
+        if job and job.status == "running":
+            _finalize(job, "The pipeline stopped before finishing.")
 
     def _execute(self, jid: str) -> None:
         job = self.store.get(jid)
@@ -189,25 +216,4 @@ class Runner:
                     job.percent = int(100 * (base + (done / max(tot, 1)) / total_phases))
                 job.save()
         proc.wait()
-
-        if proc.returncode == 0 and out_wav.exists():
-            job.status = "done"
-            job.percent = 100
-            job.phase = "done"
-            job.phase_label = "Finished"
-            mp3 = next((p for p in work.glob("*.mp3")), None)
-            if mp3:
-                dst = job.dir / mp3.name
-                dst.write_bytes(mp3.read_bytes())
-                job.mp3 = mp3.name
-            try:
-                import wave
-                with wave.open(str(out_wav), "rb") as w:
-                    job.duration_s = round(w.getnframes() / w.getframerate(), 1)
-            except Exception:
-                pass
-        else:
-            job.status = "failed"
-            job.error = "The pipeline stopped before finishing. Check the server log."
-        job.finished = time.time()
-        job.save()
+        _finalize(job, "The pipeline stopped before finishing. Check the server log.")
