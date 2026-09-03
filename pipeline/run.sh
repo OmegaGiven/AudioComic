@@ -45,6 +45,10 @@ if run_phase assemble; then
 fi
 if run_phase narrate; then
   echo "== narrate =="
+  # free the VRAM the vision model held through redescribe so Ollama can
+  # load the text model -- otherwise every narrate call silently gets an
+  # empty response and the page keeps its rough deterministic narration
+  for m in $($OLLAMA ps 2>/dev/null | awk 'NR>1{print $1}'); do $OLLAMA stop "$m" || true; done
   PYTHONPATH="$REPO" "$SEG_PY" -m pipeline.narrate "$WORK" || echo "  narrate skipped (not fatal)"
 fi
 if run_phase render; then

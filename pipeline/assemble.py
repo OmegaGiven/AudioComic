@@ -72,8 +72,11 @@ def dedupe(segs: list[dict]) -> list[dict]:
 
 
 _DANGLING = re.compile(
-    r"(?:[,:;]|--|—|\b(?:and|the|of|to|an?|in|on|at|with|but|or|for|as|"
-    r"who|that|which|when|while|their|his|her|its|my|your|our))$", re.I)
+    r"(?:[,:;]|--|—|\b(?:and|the|of|to|an?|in|on|at|with|but|or|for|as|so|"
+    r"who|that|which|what|when|while|because|their|his|her|its|my|your|our|"
+    r"you|we|i|he|she|it|they|me|him|us|them|this|these|can|will|would|could|should|"
+    r"is|are|was|were|been|be|am|has|have|had|do|does|did|not|no|"
+    r"about|from|into|than|then|like))$", re.I)
 
 
 def _unfinished(t: str) -> bool:

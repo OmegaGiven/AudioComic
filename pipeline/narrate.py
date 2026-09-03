@@ -190,7 +190,7 @@ def main() -> None:
         db = {}
     allowed = _allowed_names(narr, db)
 
-    kept, polished = 0, 0
+    kept, polished, no_llm = 0, 0, 0
     for page in sorted(narr, key=int):
         new_segs, why = _polish_page(narr[page], allowed)
         if why == "ok":
@@ -199,11 +199,17 @@ def main() -> None:
             print(f"[{page}] polished")
         else:
             kept += 1
-            if why not in ("no scene lines",):
+            if why == "llm unavailable":
+                no_llm += 1
+            elif why != "no scene lines":
                 print(f"[{page}] kept deterministic ({why})")
 
     npath.write_text(json.dumps(narr, indent=2))
     print(f"narrate: {polished} pages polished, {kept} kept as-is")
+    if no_llm and polished == 0:
+        print(f"narrate: WARNING -- the text model never responded ({no_llm} pages). "
+              f"Is Ollama up and can it load {MODEL}?", file=sys.stderr)
+        sys.exit(1)
     print(f"done -> {npath}")
 
 
