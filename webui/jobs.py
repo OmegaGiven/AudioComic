@@ -63,7 +63,7 @@ class Job:
 
     def save(self) -> None:
         p = self.dir / "job.json"
-        tmp = p.with_suffix(".json.tmp")
+        tmp = p.parent / f".job.{uuid.uuid4().hex}.tmp"   # unique per write
         tmp.write_text(json.dumps(asdict(self), indent=2))
         tmp.replace(p)          # atomic -- a concurrent read never sees a half file
 
