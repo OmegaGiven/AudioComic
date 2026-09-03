@@ -16,9 +16,9 @@ Config (env, with defaults for this tailnet):
 """
 from __future__ import annotations
 
-import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import urllib.request
@@ -64,8 +64,10 @@ def encode(wav: Path, mp3: Path) -> None:
 def copy_to_media(mp3: Path, series: str, name: str) -> str:
     dest_dir = f"{MEDIA_ROOT}/{series}"
     dest = f"{dest_dir}/{name}.mp3"
-    subprocess.run(["ssh", MEDIA_HOST, f"mkdir -p {json.dumps(dest_dir)}"], check=True)
-    subprocess.run(["scp", "-q", str(mp3), f"{MEDIA_HOST}:{json.dumps(dest)}"], check=True)
+    # ssh runs a shell -> quote the dir; scp gets one argv element -> no shell,
+    # spaces are fine as-is
+    subprocess.run(["ssh", MEDIA_HOST, f"mkdir -p {shlex.quote(dest_dir)}"], check=True)
+    subprocess.run(["scp", "-q", str(mp3), f"{MEDIA_HOST}:{dest}"], check=True)
     return dest
 
 
