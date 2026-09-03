@@ -231,6 +231,7 @@ class Runner:
             "COMIC_NUMBER": str(job.number) if job.number else "",
             "PATH": "/home/omegagiven/.local/bin:/usr/bin:/bin",
             "HOME": str(Path.home()),
+            "PYTHONUNBUFFERED": "1",   # so phase [n/m] lines reach us live
         }
         proc = subprocess.Popen(
             ["bash", str(REPO_ROOT / "pipeline" / "run.sh"),
