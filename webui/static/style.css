@@ -141,6 +141,12 @@ select{width:100%;font:inherit;padding:.7rem .8rem;background:var(--paper);color
 .navbtn:disabled{opacity:.4;cursor:not-allowed}
 
 .dbview{display:grid;gap:1.4rem}
+.dbcol{display:grid;gap:1.2rem;min-width:0}
+@media (min-width:64rem){
+  main:has(#view-review:not([hidden])){max-width:92rem}
+  .dbview{grid-template-columns:minmax(18rem,38%) 1fr;align-items:start}
+  .dbpage{position:sticky;top:1rem;max-height:calc(100vh - 2rem);overflow:auto}
+}
 .dbpage{margin:0;background:var(--surface);border:1px solid var(--rule);border-radius:8px;padding:.8rem}
 .dbpage img{display:block;width:100%;height:auto;border-radius:4px;background:var(--paper)}
 .dbpage figcaption{font:700 .8rem/1.4 "Arial Narrow",sans-serif;text-transform:uppercase;

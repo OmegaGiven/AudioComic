@@ -7,7 +7,11 @@ import re
 import subprocess
 
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
-VISION_MODEL = "qwen3-vl:8b"
+# qwen3-vl:8b regressed under Ollama -- with think:false it now returns an
+# empty response and dumps everything in the `thinking` field, so transcribe
+# got ~0 dialogue. qwen2.5vl:7b is the pre-reasoning version: no <think>, does
+# the two-part task, reads all-caps comic lettering well.
+VISION_MODEL = "qwen2.5vl:7b"
 
 _THINK = re.compile(r"<think>.*?</think>\s*", re.S | re.I)
 _OPEN_THINK = re.compile(r"<think>.*", re.S | re.I)

@@ -81,15 +81,17 @@
         <img id="db-pageimg" alt="">
         <figcaption id="db-pagecap"></figcaption>
       </figure>
-      <div id="db-panels" class="dbpanels" aria-live="polite"></div>
-      <details id="db-spoken" class="dbspoken">
-        <summary>What gets spoken on this page</summary>
-        <ol id="db-spoken-list"></ol>
-      </details>
-      <details id="db-entities" class="dbentities">
-        <summary>Characters (whole comic)</summary>
-        <ul id="db-entity-list"></ul>
-      </details>
+      <div class="dbcol">
+        <div id="db-panels" class="dbpanels" aria-live="polite"></div>
+        <details id="db-spoken" class="dbspoken" open>
+          <summary>What gets spoken on this page</summary>
+          <ol id="db-spoken-list"></ol>
+        </details>
+        <details id="db-entities" class="dbentities">
+          <summary>Characters (whole comic)</summary>
+          <ul id="db-entity-list"></ul>
+        </details>
+      </div>
     </div>
   </section>
 

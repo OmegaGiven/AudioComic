@@ -18,7 +18,7 @@ import sys
 from pipeline.comicdb import Block, ComicDB, Vision
 from pipeline.vision import VISION_MODEL, ask_vision, looks_like_reasoning, strip_think
 
-PROMPT_V = 7
+PROMPT_V = 8
 PROMPT = """Describe this comic panel in 1-2 sentences: the scene, the people present and their actions and expressions. Refer to each person ONLY by appearance (clothing, build, posture) -- do not use any character name, hero name, villain name, or franchise, even one you recognise.
 
 Then transcribe every piece of dialogue or caption text visible in the panel, in reading order, formatted exactly as:
