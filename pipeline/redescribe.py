@@ -48,11 +48,14 @@ def _prompt(context: list[str]) -> str:
             f"the setting, what each person is doing, and their expression. "
             f"Narrate it as a scene ('Rain lashed the graves.'), not 'the panel shows'. "
             f"Do NOT transcribe or mention any lettering, dialogue, caption, or sound effect. "
-            f"Do not explain your reasoning.")
+            f"/no_think")
+
+
+REDESC_V = 2  # bump to force Pass 2 to re-run every panel
 
 
 def _sig(context: list[str]) -> str:
-    return hashlib.sha1("|".join(context).encode()).hexdigest()[:8]
+    return hashlib.sha1(f"v{REDESC_V}|{'|'.join(context)}".encode()).hexdigest()[:8]
 
 
 def main() -> None:
