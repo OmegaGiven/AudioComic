@@ -36,6 +36,24 @@ def clean(t: str) -> str:
     return t
 
 
+def _norm(t: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", t.lower())
+
+
+def dedupe(segs: list[dict]) -> list[dict]:
+    """Drop a segment whose text repeats one already emitted (kumiko panel
+    splits re-OCR the same caption; recap pages repeat lines)."""
+    seen: set[str] = set()
+    out = []
+    for s in segs:
+        key = _norm(s["text"])
+        if len(key) > 8 and key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+    return out
+
+
 def looks_third_person(t: str) -> bool:
     return bool(re.search(r"\b(their|his|her)\b", t) and
                not re.search(r"\b(I|me|my|you|your|we|our)\b", t))
@@ -108,10 +126,14 @@ def main() -> None:
                         segs.append({"speaker": "NARRATOR", "text": txt})
                         prev = "NARRATOR"
                     else:
-                        segs.append({"speaker": "NARRATOR", "text": f'A voice says, "{txt}"'})
+                        inner = txt.strip('"“” ')
+                        if segs and segs[-1]["text"].startswith("A voice says:"):
+                            segs[-1]["text"] = f"{segs[-1]['text'].rstrip('.')}. {inner}"
+                        else:
+                            segs.append({"speaker": "NARRATOR", "text": f"A voice says: {inner}"})
                         prev = "NARRATOR"
 
-        narrative[str(page.index)] = merge(segs)
+        narrative[str(page.index)] = merge(dedupe(segs))
 
     (work_dir / "narrative.json").write_text(json.dumps(narrative, indent=2))
     pages = len(narrative)

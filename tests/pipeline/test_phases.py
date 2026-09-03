@@ -147,7 +147,7 @@ def test_assemble_unknown_speaker_is_reported_speech(tmp_path):
     assemble.main()
     nar = json.loads((tmp_path / "narrative.json").read_text())
     assert nar["3"][-1]["speaker"] == "NARRATOR"
-    assert 'A voice says, "Who goes there?"' in nar["3"][-1]["text"]
+    assert "A voice says: Who goes there?" in nar["3"][-1]["text"]
 
 
 # --- regression: bugs the full-issue run exposed ------------------------
@@ -189,3 +189,26 @@ def test_resolve_full_name_self_id_still_binds(tmp_path):
     ev = resolve.collect(db)
     resolve.bind(db, ev)
     assert db.entity("e1").name == "William Hand"
+
+
+def test_resolve_clause_boundary_self_id(tmp_path):
+    db = _mini(tmp_path)
+    db.replace_blocks_for_panel("p003_00", [
+        Block(id="b1", panel="p003_00", order=0, kind="DIALOGUE",
+              text_raw="I'M WORRIED ABOUT WHAT COMES NEXT.", entity="e1")])
+    resolve.bind(db, resolve.collect(db))
+    assert db.entity("e1").name is None
+
+
+def test_assemble_dedupes_repeated_caption(tmp_path):
+    db = _assemble_db(tmp_path)
+    db.add_panel(Panel(id=panel_id(3, 1), page=3, index=1, image="x"))
+    db.replace_blocks_for_panel(panel_id(3, 1), [
+        Block(id="b7", panel=panel_id(3, 1), order=0, kind="CAPTION",
+              text_raw="SPACE SECTOR 2814.")])  # dup of b1
+    db.save()
+    import sys
+    sys.argv = ["assemble", str(tmp_path)]
+    assemble.main()
+    nar = json.loads((tmp_path / "narrative.json").read_text())
+    assert sum(1 for s in nar["3"] if s["text"] == "SPACE SECTOR 2814.") == 1

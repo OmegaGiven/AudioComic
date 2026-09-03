@@ -17,7 +17,11 @@ from pipeline.comicdb import ComicDB, NameEvidence
 # Comic dialogue is lettered ALL CAPS, so case can't tell a name from a word.
 # Match case-insensitively, then reject candidates that are common words.
 NAME = r"([A-Za-z][A-Za-z']{1,15}(?:\s[A-Za-z][A-Za-z']{1,15})?)"
-SELF_ID = re.compile(rf"\b(?:i am|i'?m|call me|my name is|name's|they call me)\s+{NAME}", re.I)
+# the name must sit at a clause boundary -- "I'm William Hand." not
+# "I'm worried about..."
+SELF_ID = re.compile(
+    rf"\b(?:i am|i'?m|call me|my name is|name's|they call me)\s+{NAME}"
+    rf"(?=[.,!?;:—-]|\s+and\b|\s*$)", re.I)
 VOCATIVE = re.compile(rf"[,:]\s+{NAME}[.!?\"'”]*\s*$")
 NARRATION = re.compile(rf"^\s*{NAME}\s+(?:said|knelt|stood|turned|raised|whispered|shouted|"
                        r"replied|thought|watched|walked|ran|stared|grabbed|screamed)", re.I)
