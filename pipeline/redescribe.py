@@ -55,7 +55,7 @@ def _prompt(context: list[str]) -> str:
             f"Reply with only the description.")
 
 
-REDESC_V = 5  # bump to force Pass 2 to re-run every panel
+REDESC_V = 7  # bump to force Pass 2 to re-run every panel
 
 
 def _sig(context: list[str]) -> str:
@@ -81,11 +81,16 @@ def main() -> None:
 
     print(f"redescribe: {len(todo)} panels")
     for n, (p, ctx, sig) in enumerate(todo):
-        res = ask_vision(p.image, _prompt(ctx), num_predict=300)
+        res = ask_vision(p.image, _prompt(ctx), num_predict=460)
         scene = res.get("text", "")
         # the model sometimes appends CAPTION:/SPEAKER: lines anyway -- cut them
         scene = re.split(r"\b(?:CAPTION|SPEAKER)\s*:", scene)[0]
         scene = re.sub(r"\s+", " ", scene).strip().strip('"“”')
+        # drop a final sentence left incomplete by the token limit
+        if scene and scene[-1] not in ".!?":
+            cut = max(scene.rfind(". "), scene.rfind("! "), scene.rfind("? "))
+            if cut > 40:
+                scene = scene[:cut + 1]
         scene = re.sub(r"^(in this (comic ?book )?(panel|image|scene),?|"
                        r"the (panel|image) shows|this (comic ?book )?panel( shows)?|"
                        r"here is [^:]*:?)\s*", "", scene, flags=re.I)

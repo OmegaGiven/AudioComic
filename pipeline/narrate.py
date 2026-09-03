@@ -150,6 +150,20 @@ def _polish_page(segs: list[dict], allowed: set[str]) -> tuple[list[dict], str]:
     if not hit:
         return segs, "nothing rewritten"
 
+    # the model tends to skip the first, longest panel description -- exactly
+    # the rambling one that most needs tightening. Chase those individually.
+    for i in gen_idx:
+        if i in rewritten or len(_WORD.findall(segs[i]["text"])) <= 18:
+            continue
+        r = ask_llm(
+            "Rewrite this rough panel description as ONE vivid sentence (max 30 words) "
+            "for an audiobook narrator. Add nothing that is not stated. Use no proper "
+            "name that is not already in it. Reply with only the sentence.\n\n"
+            + segs[i]["text"], model=MODEL, num_predict=120, timeout=90)
+        r = _ECHO_RE.sub("", r.strip()).strip().strip('"“”')
+        if r and not _new_proper_nouns(r, allowed):
+            rewritten[i] = r
+
     # contract: no invented proper nouns, no ballooning
     old_words = sum(len(_WORD.findall(segs[i]["text"])) for i in gen_idx)
     new_words = 0
