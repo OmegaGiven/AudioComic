@@ -40,6 +40,12 @@ class Page:
     w: int = 0
     h: int = 0
     is_front_matter: bool = False
+    #: raw kumiko panel boxes [x, y, x2, y2] -- a hint for extract, not the spine
+    panel_boxes: list[list[float]] = field(default_factory=list)
+    #: the page-level extract vision call -- raw response cached for re-parse
+    vision: Vision = field(default_factory=Vision)
+    #: one-line summary of the page, for cross-page context in redescribe/narrate
+    summary: str = ""
 
 
 @dataclass
@@ -50,10 +56,10 @@ class Panel:
     image: str
     bbox: list[float] = field(default_factory=list)
     scene: str = ""
-    #: which phase owns .scene ("pass1" transcribe, "pass2" redescribe) and a
+    #: which phase owns .scene ("extract" pass 1, "pass2" redescribe) and a
     #: signature of the redescribe context, so redescribe only re-runs panels
     #: whose identities changed.
-    scene_source: str = "pass1"
+    scene_source: str = "extract"
     scene_sig: str = ""
     #: the transcribe vision call -- raw response cached for re-parse
     vision: Vision = field(default_factory=Vision)
@@ -68,7 +74,8 @@ class Block:
     text_raw: str
     text_clean: str = ""
     entity: str | None = None       # set by identify
-    speaker_raw: str | None = None  # a name the vision model printed, if any
+    speaker_raw: str | None = None  # a proper name the vision model printed, if any
+    speaker_hint: str = ""          # appearance tag from extract (speaker continuity)
     essential: bool = True
 
 
@@ -149,7 +156,11 @@ class ComicDB:
         return self._d["overrides"]
 
     def pages(self) -> list[Page]:
-        return [Page(**p) for p in self._d["pages"]]
+        return [_page(p) for p in self._d["pages"]]
+
+    def page(self, index: int) -> Page | None:
+        raw = next((p for p in self._d["pages"] if p["index"] == index), None)
+        return _page(raw) if raw else None
 
     def panels(self) -> list[Panel]:
         return [_panel(p) for p in self._d["panels"]]
@@ -159,7 +170,7 @@ class ComicDB:
         return _panel(raw) if raw else None
 
     def blocks(self, *, panel: str | None = None, entity: str | None = None) -> list[Block]:
-        out = [Block(**b) for b in self._d["blocks"]]
+        out = [_block(b) for b in self._d["blocks"]]
         if panel is not None:
             out = [b for b in out if b.panel == panel]
         if entity is not None:
@@ -182,6 +193,26 @@ class ComicDB:
         self._d["pages"] = [p for p in self._d["pages"] if p["index"] != page.index]
         self._d["pages"].append(asdict(page))
         self._d["pages"].sort(key=lambda p: p["index"])
+
+    def set_page_vision(self, index: int, vision: Vision, summary: str = "") -> None:
+        for p in self._d["pages"]:
+            if p["index"] == index:
+                p["vision"] = asdict(vision)
+                if summary:
+                    p["summary"] = summary
+                return
+
+    def set_page_summary(self, index: int, summary: str) -> None:
+        for p in self._d["pages"]:
+            if p["index"] == index:
+                p["summary"] = summary
+                return
+
+    def remove_panels_for_page(self, index: int) -> None:
+        """Drop a page's panels and their blocks -- extract rebuilds them."""
+        dead = {p["id"] for p in self._d["panels"] if p["page"] == index}
+        self._d["panels"] = [p for p in self._d["panels"] if p["id"] not in dead]
+        self._d["blocks"] = [b for b in self._d["blocks"] if b["panel"] not in dead]
 
     def add_panel(self, panel: Panel) -> None:
         self._d["panels"] = [p for p in self._d["panels"] if p["id"] != panel.id]
@@ -262,10 +293,25 @@ class ComicDB:
 
 
 # -- (de)serialisation helpers -----------------------------------------
+def _page(raw: dict) -> Page:
+    raw = dict(raw)
+    raw["vision"] = Vision(**raw.get("vision", {}))
+    raw.setdefault("panel_boxes", [])
+    raw.setdefault("summary", "")
+    return Page(**raw)
+
+
 def _panel(raw: dict) -> Panel:
     raw = dict(raw)
     raw["vision"] = Vision(**raw.get("vision", {}))
+    raw.setdefault("scene_source", "extract")
     return Panel(**raw)
+
+
+def _block(raw: dict) -> Block:
+    raw = dict(raw)
+    raw.setdefault("speaker_hint", "")
+    return Block(**raw)
 
 
 def _panel_dict(p: Panel) -> dict:

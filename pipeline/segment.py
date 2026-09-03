@@ -1,4 +1,8 @@
-"""Phase 1 -- extract archive, segment panels (Kumiko), seed the DB.
+"""Phase 1 -- extract archive, list pages, run Kumiko for panel-box hints.
+
+Kumiko's boxes are stored on each Page as a *hint*. The `extract` phase does
+its own panel enumeration from the page image; it only borrows a Kumiko box
+when its own panel count matches Kumiko's (so the review UI can still crop).
 
     python -m pipeline.segment <issue.cbz> <work_dir>
 """
@@ -10,7 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from pipeline.comicdb import ComicDB, Page, Panel, panel_id
+from pipeline.comicdb import ComicDB, Page
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 KUMIKO_DIR = REPO_ROOT / "tools" / "kumiko"
@@ -62,8 +66,7 @@ def main() -> None:
     number = int(m.group(2)) if m else None
     db = ComicDB.load_or_new(work_dir, source=archive.name, series=series, number=number)
     extracted = work_dir / "extracted"
-    panels_dir = work_dir / "panels"
-    panels_dir.mkdir(parents=True, exist_ok=True)
+    (work_dir / "panels").mkdir(parents=True, exist_ok=True)
 
     print(f"extracting {archive.name}")
     extract(archive, extracted)
@@ -73,19 +76,14 @@ def main() -> None:
     for i, f in enumerate(pages):
         im = Image.open(f)
         w, h = im.size
-        panels = run_kumiko(f) or [[0, 0, w, h]]
-        # front matter heuristic: a spread-ish single-panel page near the
-        # start, or a page Kumiko couldn't split with almost nothing on it
-        front = i < 4 and len(panels) <= 1
-        db.add_page(Page(index=i, image=str(f), w=w, h=h, is_front_matter=front))
-        for pi, (x, y, pw, ph) in enumerate(panels):
-            pid = panel_id(i, pi)
-            crop_path = panels_dir / f"{pid}.jpg"
-            im.crop((int(x), int(y), int(x + pw), int(y + ph))).save(crop_path, quality=92)
-            db.add_panel(Panel(id=pid, page=i, index=pi, image=str(crop_path),
-                               bbox=[float(x), float(y), float(x + pw), float(y + ph)]))
         im.close()
-        print(f"[{i+1}/{len(pages)}] {f.name}: {len(panels)} panels"
+        boxes = run_kumiko(f) or [[0, 0, w, h]]
+        boxes = [[float(x), float(y), float(x + pw), float(y + ph)] for x, y, pw, ph in boxes]
+        # front matter heuristic: a spread-ish single-panel page near the start
+        front = i < 4 and len(boxes) <= 1
+        db.add_page(Page(index=i, image=str(f), w=w, h=h, is_front_matter=front,
+                         panel_boxes=boxes))
+        print(f"[{i+1}/{len(pages)}] {f.name}: {len(boxes)} kumiko boxes"
               + ("  (front matter)" if front else ""))
 
     db.save()

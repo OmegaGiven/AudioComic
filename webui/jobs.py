@@ -25,11 +25,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 JOBS_DIR = Path(__file__).resolve().parent / "jobs"
 
-PHASES = ["segment", "transcribe", "identify", "resolve", "redescribe",
+PHASES = ["segment", "extract", "identify", "resolve", "redescribe",
           "assemble", "render", "publish"]
 PHASE_LABEL = {
-    "segment": "Splitting pages into panels",
-    "transcribe": "Reading every panel",
+    "segment": "Scanning the pages",
+    "extract": "Reading each page",
     "identify": "Identifying characters",
     "resolve": "Working out character names",
     "redescribe": "Describing each scene",

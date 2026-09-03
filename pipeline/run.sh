@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ComicDB pipeline, end to end.
 #   pipeline/run.sh <issue.cbz> <work_dir> <out.wav> [--from <phase>]
-# phases: segment transcribe identify resolve redescribe assemble render
+# phases: segment extract identify resolve redescribe assemble render publish
 set -euo pipefail
 
 CBZ="$1"; WORK="$2"; OUT="$3"; shift 3
@@ -18,15 +18,15 @@ KOKORO_PY="${KOKORO_PY:-$REPO/bakeoff/.venvs/kokoro/bin/python}"
 OLLAMA="${OLLAMA:-docker exec ollama ollama}"
 [ -x "$SEG_PY" ] || SEG_PY=python3
 
-order=(segment transcribe identify resolve redescribe assemble render publish)
+order=(segment extract identify resolve redescribe assemble render publish)
 started=0
 run_phase() { [ "$1" = "$FROM" ] && started=1; [ "$started" = 1 ]; }
 
 if run_phase segment; then
   echo "== segment =="; "$SEG_PY" -m pipeline.segment "$CBZ" "$WORK"
 fi
-if run_phase transcribe; then
-  echo "== transcribe =="; PYTHONPATH="$REPO" "$SEG_PY" -m pipeline.transcribe "$WORK"
+if run_phase extract; then
+  echo "== extract =="; PYTHONPATH="$REPO" "$SEG_PY" -m pipeline.extract "$WORK"
 fi
 if run_phase identify; then
   echo "== identify (Magi) =="
