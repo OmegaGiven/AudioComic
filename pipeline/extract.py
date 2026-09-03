@@ -120,16 +120,33 @@ def _parse_chunk(chunk: str) -> tuple[str, list[tuple[str, str]]]:
     return desc, lines
 
 
+# a speaker label has no sentence punctuation -- that keeps a balloon's own
+# text (full of '.' '!' '?') from being mistaken for the next label
+_SEG_RE = re.compile(
+    r"([A-Za-z][A-Za-z0-9 '\-]{0,22}?)\s*\|\s*(.+?)"
+    r"(?=\s+[A-Za-z][A-Za-z0-9 '\-]{0,22}?\s*\||$)")
+
+
 def _add_line(lines: list, raw: str) -> None:
+    # the model often puts several balloons on one physical line,
+    # "label | text label | text" -- split them back out
+    segs = _SEG_RE.findall(raw)
+    if len(segs) >= 2:
+        for tag, txt in segs:
+            _push(lines, tag, txt)
+        return
     m = _TAG_RE.match(raw)
     if not m:
         return
-    tag = re.sub(r"[<>]", "", m.group(1)).strip()
-    txt = m.group(2).strip().strip('"“” ')
+    _push(lines, m.group(1), m.group(2))
+
+
+def _push(lines: list, tag: str, txt: str) -> None:
+    tag = re.sub(r"[<>]", "", tag).strip()
+    txt = txt.strip().strip('"“” ').strip()
     if not txt:
         return
-    # drop an exact repeat of the previous line (runaway loop guard)
-    if lines and lines[-1][1].lower() == txt.lower():
+    if lines and lines[-1][1].lower() == txt.lower():  # runaway repeat
         return
     lines.append((tag, txt))
 
@@ -148,6 +165,61 @@ def to_blocks(db: ComicDB, pid: str, lines: list[tuple[str, str]]) -> list[Block
         out.append(Block(id=db.next_block_id(), panel=pid, order=order, kind=kind,
                          text_raw=text, text_clean=re.sub(r"\s+", " ", text).strip(),
                          speaker_hint=hint))
+    return out
+
+
+PANEL_PROMPT = """Describe THIS single comic panel in 1-2 sentences: the people (by appearance only -- clothing, build, posture; never a character or franchise name), their actions and expressions, and the setting. Describe only what is visible; do not invent weather, lighting, or mood that is not shown.
+
+Then, on their own lines, transcribe every balloon and caption in reading order, all the words of one balloon on one line:
+- CAPTION: narration-box text
+- man in white shirt: speech-balloon text (use a short appearance label; reuse it for the same speaker)
+- SFX: an unspoken sound effect
+If there is no lettering, write: TEXT: none
+
+Copy the words exactly. No commentary, no reasoning."""
+
+
+def _needs_fallback(parsed: list, raw: str, kumiko_n: int) -> str:
+    if not parsed:
+        return "no panels parsed"
+    if is_runaway(raw):
+        return "runaway output"
+    if kumiko_n >= 2 and len(parsed) > 1.5 * kumiko_n + 3:
+        return f"{len(parsed)} panels vs ~{kumiko_n} expected"
+    return ""
+
+
+def _extract_panel_level(page) -> list[ParsedPanel]:
+    """Fallback: one small vision call per kumiko crop. Slower but never loops."""
+    from PIL import Image
+    boxes = page.panel_boxes or [[0, 0, page.w, page.h]]
+    im = Image.open(page.image)
+    out: list[ParsedPanel] = []
+    for x, y, x2, y2 in boxes:
+        crop = im.crop((int(x), int(y), int(x2), int(y2)))
+        tmp = page.image + ".pcrop.jpg"
+        crop.save(tmp, quality=92)
+        res = ask_vision(tmp, PANEL_PROMPT, num_predict=500, timeout=180,
+                         extra_options={"repeat_penalty": 1.3})
+        text = strip_think(res.get("text", ""))
+        # first tagged line onward = lettering, everything before = description
+        parts = re.split(r"(?im)^\s*(?:TEXT:\s*$|[-*]?\s*(?:CAPTION|SFX)\s*:|"
+                         r"[-*]?\s*[A-Za-z][A-Za-z .'\-]{0,30}:\s)", text, maxsplit=1)
+        desc = re.sub(r"\s+", " ", parts[0]).strip().strip('"“” ')
+        desc = re.sub(r"^(here'?s?|description|the panel shows|this panel( shows)?|"
+                      r"in this panel,?)[:,\s-]+", "", desc, flags=re.I)
+        lines: list[tuple[str, str]] = []
+        for ln in text.splitlines():
+            s = ln.strip()
+            if s and (":" in s or "|" in s) and not s.lower().startswith(("desc", "here")):
+                _add_line(lines, s)
+        out.append(ParsedPanel(desc[:1].upper() + desc[1:] if desc else desc, lines))
+    im.close()
+    try:
+        import os
+        os.remove(page.image + ".pcrop.jpg")
+    except OSError:
+        pass
     return out
 
 
@@ -196,9 +268,11 @@ def main() -> None:
     todo, cached = [], 0
     for p in pages:
         v = p.vision
-        if v.raw and v.model == VISION_MODEL and v.prompt_v == PROMPT_V:
+        fell_back = "per-panel fallback used" in (v.raw or "")
+        if (v.raw and v.model == VISION_MODEL and v.prompt_v == PROMPT_V
+                and not fell_back):
             parsed = parse(v.raw)
-            if parsed:
+            if parsed and not _needs_fallback(parsed, v.raw, len(p.panel_boxes)):
                 _rebuild_page(db, p, parsed)
                 cached += 1
                 continue
@@ -220,6 +294,11 @@ def main() -> None:
                                             "temperature": 0.2})
             raw = res.get("text", "")
         parsed = parse(raw)
+        why = _needs_fallback(parsed, raw, len(p.panel_boxes))
+        if why:
+            note += f" [page-level bad: {why} -> per-panel]"
+            parsed = _extract_panel_level(p)
+            raw = raw + "\n\n--- per-panel fallback used ---\n"
         v = Vision(model=VISION_MODEL, prompt_v=PROMPT_V, raw=raw,
                    at=dt.datetime.now().isoformat(timespec="seconds"))
         db.set_page_vision(p.index, v)
