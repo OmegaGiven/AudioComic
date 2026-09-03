@@ -52,11 +52,12 @@ def _allowed_names(narr: dict, db: dict) -> set[str]:
     for e in db.get("entities", []):
         if e.get("name"):
             ok.update(_WORD.findall(e["name"]))
-    # any proper noun the reader will already have heard in a verbatim line
+    # any proper noun already in the script -- verbatim lines the reader will
+    # hear, and the machine scene lines too (a name redescribe put there is
+    # not narrate's to catch; narrate only blocks the LLM inventing a NEW one)
     for segs in narr.values():
         for s in segs:
-            if not s.get("gen"):
-                ok.update(_PROPER.findall(s["text"]))
+            ok.update(_PROPER.findall(s["text"]))
     return {w.lower() for w in ok}
 
 
