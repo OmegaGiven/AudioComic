@@ -107,3 +107,28 @@ audio{width:100%;margin:1rem 0;display:block}
 
 select{width:100%;font:inherit;padding:.7rem .8rem;background:var(--paper);color:var(--ink);
   border:1.5px solid var(--rule);border-radius:6px}
+
+.badge{display:inline-block;min-width:1.4rem;padding:.05rem .4rem;margin-left:.3rem;
+  background:var(--accent);color:var(--accent-ink);border-radius:999px;
+  font:700 .8rem/1.4 "Arial Narrow",sans-serif}
+.add-ok{color:var(--good);font-weight:600;margin-top:.8rem}
+
+.joblist{list-style:none;padding:0;margin:1.2rem 0;display:grid;gap:.7rem}
+.jobrow{background:var(--surface);border:1px solid var(--rule);border-left:4px solid var(--rule);
+  border-radius:8px;padding:.9rem 1.1rem;display:grid;gap:.5rem}
+.jobrow[data-status="running"]{border-left-color:var(--accent)}
+.jobrow[data-status="done"]{border-left-color:var(--good)}
+.jobrow[data-status="failed"]{border-left-color:var(--crit)}
+.jobrow[data-status="cancelled"]{border-left-color:var(--ink-soft)}
+.jobmain{display:flex;flex-wrap:wrap;gap:.2rem 1rem;align-items:baseline}
+.jobtitle{font-weight:700;font-size:1.08rem}
+.jobstatus{color:var(--ink-soft);font-size:.95rem}
+.jobbar{height:8px;background:var(--paper);border:1px solid var(--rule);border-radius:5px;overflow:hidden}
+.jobbar span{display:block;height:100%;background:var(--accent)}
+@media (prefers-reduced-motion:no-preference){ .jobbar span{transition:width .4s} }
+.jobactions{display:flex;gap:.5rem;flex-wrap:wrap}
+.jobactions button, .btnlink{font:700 .9rem/1 "Arial Narrow",sans-serif;text-transform:uppercase;
+  letter-spacing:.02em;background:var(--paper);color:var(--ink);text-decoration:none;
+  border:1.5px solid var(--rule);border-radius:6px;padding:.5rem .9rem;cursor:pointer;min-height:2.25rem}
+.jobactions button:hover, .btnlink:hover{border-color:var(--accent);color:var(--accent)}
+.jobactions button:disabled{opacity:.5;cursor:wait}

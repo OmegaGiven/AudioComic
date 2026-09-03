@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 from dataclasses import asdict
 from pathlib import Path
 
@@ -48,16 +49,30 @@ async def create_job(file: UploadFile, series: str = Form(""),
         raise HTTPException(
             400, f"That file type isn't supported. Upload one of: "
                  f"{', '.join(sorted(ALLOWED))}.")
-    if runner.busy:
-        raise HTTPException(
-            409, "A comic is already being generated. Please wait for it to "
-                 "finish, then try again.")
     data = await file.read()
     num = int(number) if number.strip().isdigit() else None
     job = store.create(file.filename or f"comic{ext}", data,
                        series=series.strip(), number=num)
-    runner.start(job)
-    return asdict(job)
+    runner.enqueue(job.id)
+    return asdict(store.get(job.id))
+
+
+@app.post("/api/jobs/{jid}/cancel")
+def cancel_job(jid: str) -> dict:
+    if not runner.cancel(jid):
+        raise HTTPException(409, "That job can't be cancelled (already finished?).")
+    return asdict(store.get(jid))
+
+
+@app.delete("/api/jobs/{jid}")
+def delete_job(jid: str) -> dict:
+    job = store.get(jid)
+    if not job:
+        raise HTTPException(404, "No job with that id.")
+    if job.status in ("running", "queued"):
+        raise HTTPException(409, "Cancel the job before removing it.")
+    shutil.rmtree(job.dir, ignore_errors=True)
+    return {"removed": jid}
 
 
 @app.get("/api/jobs/{jid}")

@@ -12,7 +12,9 @@ progress markers, so it inherits all the venv / GPU-juggling logic.
 from __future__ import annotations
 
 import json
+import queue
 import re
+import signal
 import subprocess
 import threading
 import time
@@ -43,7 +45,8 @@ class Job:
     filename: str
     series: str = ""
     number: int | None = None
-    status: str = "queued"          # queued | running | done | failed
+    status: str = "queued"          # queued | running | done | failed | cancelled
+    queue_pos: int = 0              # 1-based place in line while queued
     phase: str = ""                 # current phase key
     phase_label: str = ""
     progress: str = ""              # human line, e.g. "panel 40 of 130"
@@ -83,25 +86,22 @@ class JobStore:
         return Job(**json.loads(p.read_text()))
 
     def list(self) -> list[Job]:
-        out = []
-        for d in sorted(JOBS_DIR.iterdir(), reverse=True):
-            j = self.get(d.name) if d.is_dir() else None
-            if j:
-                out.append(j)
+        out = [self.get(d.name) for d in JOBS_DIR.iterdir() if d.is_dir()]
+        out = [j for j in out if j]
+        out.sort(key=lambda j: j.created, reverse=True)  # newest first
         return out
 
-    def reconcile(self, runner: Runner | None = None) -> None:
-        """On startup: a job left 'running' by a server restart is orphaned.
-        If its pipeline process is still alive, re-attach a monitor; else
-        finish it from disk, or mark it failed."""
-        for job in self.list():
-            if job.status != "running":
-                continue
-            if _pipeline_alive(job.id):
-                if runner:
+    def reconcile(self, runner: Runner) -> None:
+        """On startup: re-attach a pipeline that's still running, re-queue jobs
+        that were waiting, finalize what finished while we were down."""
+        for job in reversed(self.list()):  # oldest first -> queue order kept
+            if job.status == "running":
+                if _pipeline_alive(job.id):
                     runner.reattach(job.id)
-                continue
-            _finalize(job, "The server restarted while this comic was generating.")
+                else:
+                    _finalize(job, "The server restarted while this comic was generating.")
+            elif job.status == "queued":
+                runner.enqueue(job.id)
 
 
 def _pipeline_alive(jid: str) -> bool:
@@ -110,7 +110,9 @@ def _pipeline_alive(jid: str) -> bool:
     return r.returncode == 0
 
 
-def _finalize(job: Job, fail_reason: str) -> None:
+def _finalize(job: Job | None, fail_reason: str) -> None:
+    if not job:
+        return
     wav = job.dir / "out.wav"
     mp3 = next((job.dir / "work").glob("*.mp3"), None)
     if wav.exists() and mp3:
@@ -123,62 +125,93 @@ def _finalize(job: Job, fail_reason: str) -> None:
                 job.duration_s = round(w.getnframes() / w.getframerate(), 1)
         except Exception:
             pass
-    else:
+    elif job.status not in ("cancelled",):
         job.status, job.error = "failed", fail_reason
+    else:
+        job.error = job.error or "Cancelled."
     job.finished = time.time()
     job.save()
 
 
 _PHASE_RE = re.compile(r"^==\s*([a-z]+)")
 _PROG_RE = re.compile(r"\[(\d+)/(\d+)\]")
-_TXT_PROG_RE = re.compile(r"^(\d+)\s+panels?\s+to\s+(transcribe|describe)", re.I)
 
 
 class Runner:
-    """Runs one job at a time in a background thread."""
+    """FIFO queue, one job processed at a time (single GPU). A background
+    worker pulls job ids and runs the pipeline; the rest wait as 'queued'."""
 
     def __init__(self, store: JobStore) -> None:
         self.store = store
-        self._lock = threading.Lock()
+        self._q: queue.Queue[str] = queue.Queue()
         self._current: str | None = None
+        self._procs: dict[str, subprocess.Popen] = {}
+        threading.Thread(target=self._worker, daemon=True).start()
 
     @property
-    def busy(self) -> bool:
-        return self._current is not None
+    def current(self) -> str | None:
+        return self._current
 
-    def start(self, job: Job) -> None:
-        threading.Thread(target=self._run, args=(job.id, self._execute),
-                         daemon=True).start()
+    def enqueue(self, jid: str) -> None:
+        self._q.put(jid)
+        self._renumber()
 
     def reattach(self, jid: str) -> None:
-        """A pipeline still running after a server restart -- wait it out and
-        finalize from disk (progress won't update, but the job completes)."""
-        threading.Thread(target=self._run, args=(jid, self._wait_out),
-                         daemon=True).start()
+        threading.Thread(target=self._wait_out, args=(jid,), daemon=True).start()
 
-    def _run(self, jid: str, fn) -> None:
-        with self._lock:
-            if self._current:
-                return
+    def cancel(self, jid: str) -> bool:
+        job = self.store.get(jid)
+        if not job:
+            return False
+        if job.status == "queued":
+            job.status, job.error = "cancelled", "Cancelled before it started."
+            job.finished = time.time()
+            job.save()
+            self._renumber()
+            return True
+        if job.status == "running" and jid in self._procs:
+            try:
+                self._procs[jid].send_signal(signal.SIGTERM)
+            except Exception:
+                pass
+            return True
+        return False
+
+    def _renumber(self) -> None:
+        waiting = [j for j in reversed(self.store.list()) if j.status == "queued"]
+        for i, j in enumerate(waiting, 1):
+            if j.queue_pos != i:
+                j.queue_pos = i
+                j.save()
+
+    def _worker(self) -> None:
+        while True:
+            jid = self._q.get()
+            job = self.store.get(jid)
+            if not job or job.status != "queued":
+                continue
             self._current = jid
-        try:
-            fn(jid)
-        finally:
-            with self._lock:
+            try:
+                self._execute(jid)
+            finally:
                 self._current = None
+                self._renumber()
 
     def _wait_out(self, jid: str) -> None:
+        self._current = jid
         while _pipeline_alive(jid):
             time.sleep(5)
         job = self.store.get(jid)
         if job and job.status == "running":
             _finalize(job, "The pipeline stopped before finishing.")
+        self._current = None
 
     def _execute(self, jid: str) -> None:
         job = self.store.get(jid)
         if not job:
             return
         job.status = "running"
+        job.queue_pos = 0
         job.save()
 
         upload = next((job.dir / "upload").iterdir())
@@ -195,7 +228,9 @@ class Runner:
              str(upload), str(work), str(out_wav)],
             cwd=str(REPO_ROOT), env={**env}, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, bufsize=1,
+            start_new_session=True,  # survive a web-server restart
         )
+        self._procs[jid] = proc
         total_phases = len(PHASES)
         for line in proc.stdout or []:
             line = line.rstrip()
@@ -216,4 +251,9 @@ class Runner:
                     job.percent = int(100 * (base + (done / max(tot, 1)) / total_phases))
                 job.save()
         proc.wait()
-        _finalize(job, "The pipeline stopped before finishing. Check the server log.")
+        self._procs.pop(jid, None)
+        job = self.store.get(jid)
+        if job and job.status == "running" and proc.returncode not in (0,):
+            job.status = "cancelled" if proc.returncode in (-15, -2, 143) else "failed"
+        _finalize(job or self.store.get(jid),
+                  "The pipeline stopped before finishing. Check the server log.")

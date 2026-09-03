@@ -18,6 +18,10 @@
                 aria-selected="true">Generate</button>
       </li>
       <li role="presentation">
+        <button role="tab" id="tab-queue" aria-controls="view-queue"
+                aria-selected="false" tabindex="-1">Queue <span id="queue-count" class="badge" hidden></span></button>
+      </li>
+      <li role="presentation">
         <button role="tab" id="tab-review" aria-controls="view-review"
                 aria-selected="false" tabindex="-1">Review database</button>
       </li>
@@ -55,25 +59,20 @@
       </div>
 
       <p id="form-error" class="form-error" role="alert" hidden></p>
-      <button type="submit" id="submit" class="primary">Start generating</button>
+      <button type="submit" id="submit" class="primary">Add to queue</button>
+      <p id="add-ok" class="add-ok" role="status" aria-live="polite" hidden></p>
     </form>
-
-    <!-- progress -->
-    <section id="progress" class="progress" aria-labelledby="progress-h" hidden>
-      <h2 id="progress-h">Progress</h2>
-      <p id="progress-status" class="progress-status" role="status" aria-live="polite">Starting&hellip;</p>
-      <div class="bar" role="img" aria-hidden="true"><span id="bar-fill"></span></div>
-      <ol id="phase-list" class="phases"></ol>
-    </section>
-
-    <!-- result -->
-    <section id="result" class="result" aria-labelledby="result-h" hidden>
-      <h2 id="result-h">Your audio comic is ready</h2>
-      <p><a id="download" class="primary" href="#" download>Download</a></p>
-      <audio id="player" controls preload="none"></audio>
-      <p><a id="open-review" href="#">Review this comic's database</a></p>
-    </section>
   </section>
+
+  <!-- ============ QUEUE ============ -->
+  <section id="view-queue" role="tabpanel" aria-labelledby="tab-queue" hidden>
+    <h1>Queue</h1>
+    <p class="lede">Every comic you've added. One is generated at a time; the rest wait in line.</p>
+    <p id="queue-summary" class="progress-status" role="status" aria-live="polite">Loading&hellip;</p>
+    <ul id="queue-list" class="joblist"></ul>
+  </section>
+
+  <!-- ============ REVIEW ============ -->
 
   <!-- ============ REVIEW ============ -->
   <section id="view-review" role="tabpanel" aria-labelledby="tab-review" hidden>
