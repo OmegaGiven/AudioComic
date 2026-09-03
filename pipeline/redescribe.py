@@ -55,7 +55,7 @@ def _prompt(context: list[str]) -> str:
             f"Reply with only the description.")
 
 
-REDESC_V = 4  # bump to force Pass 2 to re-run every panel
+REDESC_V = 5  # bump to force Pass 2 to re-run every panel
 
 
 def _sig(context: list[str]) -> str:
@@ -86,8 +86,9 @@ def main() -> None:
         # the model sometimes appends CAPTION:/SPEAKER: lines anyway -- cut them
         scene = re.split(r"\b(?:CAPTION|SPEAKER)\s*:", scene)[0]
         scene = re.sub(r"\s+", " ", scene).strip().strip('"“”')
-        scene = re.sub(r"^(the panel shows|this panel( shows)?|here is [^:]*:?)\s*",
-                       "", scene, flags=re.I)
+        scene = re.sub(r"^(in this panel,?|the panel shows|this panel( shows)?|"
+                       r"here is [^:]*:?)\s*", "", scene, flags=re.I)
+        scene = scene[:1].upper() + scene[1:] if scene else scene
         db.set_redescribe(p.id, scene, sig)
         db.save()
         print(f"[{n+1}/{len(todo)}] {p.id}  ctx={ctx or '-'}")
