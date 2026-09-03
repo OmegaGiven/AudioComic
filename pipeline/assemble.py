@@ -99,9 +99,14 @@ def coalesce_blocks(blocks: list):
         # entity may disagree only because Magi clustered the split fragments
         # differently -- tolerate that unless BOTH carry a (different) id.
         entity_ok = j is not None and (j.entity == b.entity or not j.entity or not b.entity)
+        left = j.text_raw.strip().rstrip("\"'”’) ") if j else ""
+        # a caption box is one complete sentence; no terminal punctuation means
+        # the OCR broke it mid-line. dialogue needs a stronger continuation cue.
+        unfinished = (not re.search(r"[.?!]$", left)) if (j and j.kind == "CAPTION") \
+            else _unfinished(left)
         joinable = (
             j is not None and j.kind == b.kind and j.kind in ("CAPTION", "DIALOGUE")
-            and entity_ok and _unfinished(j.text_raw)
+            and entity_ok and unfinished
         )
         if joinable:
             left = re.sub(r"[-—]+\s*$", "", j.text_raw.rstrip())
