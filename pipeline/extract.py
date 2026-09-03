@@ -23,30 +23,36 @@ import sys
 from pipeline.comicdb import Block, ComicDB, Panel, Vision, panel_id
 from pipeline.vision import VISION_MODEL, ask_vision, looks_like_reasoning, strip_think
 
-PROMPT_V = 1
+PROMPT_V = 2
 PROMPT = """You are transcribing ONE page of a comic book for an audio adaptation.
 
-Work through the panels in reading order (left to right, top to bottom; a full-width strip is one panel). For EVERY panel output exactly this block:
+Go panel by panel in reading order (left to right, top to bottom; a full-width strip is one panel). This page has roughly {n_panels} panels.
 
-PANEL <n>
-DESC: one or two sentences describing ONLY what is visibly happening in THIS panel -- the people (by appearance only: clothing, build, posture -- never a character, hero, or franchise name), their actions and expressions, and the setting. Do not invent weather, lighting, time of day, or mood that is not clearly shown. Do not carry over anything from another panel.
+For EVERY panel write a block in exactly this shape:
+
+PANEL 1
+DESC: One or two sentences describing ONLY what is visible in THIS panel -- the people (by appearance only: clothing, build, posture; never a character, hero, or franchise name), their actions and expressions, and the setting. Do not invent weather, lighting, time of day, or mood that is not shown. Do not carry anything over from another panel.
 TEXT:
-<tag> | <exact text>
-... one line per balloon, caption, or sound effect, in reading order ...
+- CAPTION: text of a rectangular narration or caption box
+- man in white shirt: words in that character's speech balloon
+- SFX: a sound-effect word that nobody speaks
 
-For each TEXT line the tag is one of:
-  - a SHORT appearance label for the speaker, e.g. "man in white shirt" or "cloaked figure" -- and if the speaker is the same person who spoke on the previous line or panel, REUSE the identical label
-  - CAPTION  for a narration/caption box with no speaker
-  - SFX      for a sound effect that is not spoken by anyone
-If the panel has no lettering at all, write exactly: TEXT: none
+Rules for the TEXT lines:
+- Put ALL the words from ONE balloon or ONE caption box on a SINGLE line, even if they are lettered across several rows. Never split one balloon into multiple lines.
+- Start every line with "- " then the label, then ": ", then the exact words.
+- Label a speech balloon with a SHORT appearance label for who is speaking ("man in white shirt", "cloaked figure"). Reuse the identical label every time the same person speaks.
+- A rectangular caption / narration box is always CAPTION, even when it is a character's inner monologue.
+- List the balloons and captions in reading order. Copy the words exactly -- do not paraphrase, fix spelling, translate, or skip anything.
+- If the panel has no lettering, write exactly: TEXT: none
+- Never repeat a line. If you find yourself repeating, stop that panel.
 
-Copy every piece of text exactly as lettered -- do not paraphrase, fix spelling, translate, or skip anything.
-Do not add any commentary, summary, or explanation. Output only PANEL blocks.
+Output only PANEL blocks. No commentary, no summary, no reasoning.
 """
 
 _PANEL_RE = re.compile(r"^\s*PANEL\s+(\d+)\b", re.I | re.M)
-_TAG_RE = re.compile(r"^\s*(?:[-*]\s*)?(.+?)\s*[|:]\s*(.+?)\s*$")
+_TAG_RE = re.compile(r"^\s*[-*]?\s*([^:|]{1,40}?)\s*[|:]\s*(.+?)\s*$")
 _SFX_SHAPE = re.compile(r"^[A-Z][A-Z'\-]{1,10}[!?.]*$")
+_MAX_LINES_PER_PANEL = 24
 
 
 class ParsedPanel:
@@ -55,6 +61,16 @@ class ParsedPanel:
     def __init__(self, desc: str, lines: list[tuple[str, str]]):
         self.desc = desc
         self.lines = lines  # [(tag, text)]  tag in {CAPTION, SFX, <appearance>}
+
+
+def is_runaway(raw: str) -> bool:
+    """A dense page can send the model into a repeat loop ("FLASH | FLASH"
+    x500). Flag it: many lines, few of them distinct."""
+    body = [ln.strip() for ln in raw.splitlines()
+            if ln.strip().startswith(("-", "*")) or "|" in ln]
+    if len(body) < 40:
+        return False
+    return len(set(b.lower() for b in body)) / len(body) < 0.5
 
 
 def parse(raw: str) -> list[ParsedPanel]:
@@ -93,6 +109,8 @@ def _parse_chunk(chunk: str) -> tuple[str, list[tuple[str, str]]]:
             desc_parts.append(raw)
         else:
             _add_line(lines, raw)
+        if len(lines) > _MAX_LINES_PER_PANEL:
+            break
     desc = re.sub(r"\s+", " ", " ".join(desc_parts)).strip()
     desc = re.sub(r"^(here'?s?|description|scene|the panel shows|this panel( shows)?|"
                   r"in this panel,?)[:,\s-]+", "", desc, flags=re.I)
@@ -106,9 +124,14 @@ def _add_line(lines: list, raw: str) -> None:
     m = _TAG_RE.match(raw)
     if not m:
         return
-    tag, txt = m.group(1).strip(), m.group(2).strip().strip('"“” ')
-    if txt:
-        lines.append((tag, txt))
+    tag = re.sub(r"[<>]", "", m.group(1)).strip()
+    txt = m.group(2).strip().strip('"“” ')
+    if not txt:
+        return
+    # drop an exact repeat of the previous line (runaway loop guard)
+    if lines and lines[-1][1].lower() == txt.lower():
+        return
+    lines.append((tag, txt))
 
 
 def to_blocks(db: ComicDB, pid: str, lines: list[tuple[str, str]]) -> list[Block]:
@@ -184,9 +207,18 @@ def main() -> None:
         print(f"{cached} pages re-parsed from cache")
     print(f"{len(todo)} pages to extract")
 
+    opts = {"repeat_penalty": 1.3, "repeat_last_n": 320}
     for n, p in enumerate(todo):
-        res = ask_vision(p.image, PROMPT, num_predict=2200, timeout=420)
+        prompt = PROMPT.replace("{n_panels}", str(max(len(p.panel_boxes), 1)))
+        res = ask_vision(p.image, prompt, num_predict=1500, timeout=420, extra_options=opts)
         raw = res.get("text", "")
+        note = ""
+        if is_runaway(raw):
+            note = " [runaway -> retry]"
+            res = ask_vision(p.image, prompt, num_predict=900, timeout=300,
+                             extra_options={"repeat_penalty": 1.5, "repeat_last_n": 512,
+                                            "temperature": 0.2})
+            raw = res.get("text", "")
         parsed = parse(raw)
         v = Vision(model=VISION_MODEL, prompt_v=PROMPT_V, raw=raw,
                    at=dt.datetime.now().isoformat(timespec="seconds"))
@@ -194,10 +226,9 @@ def main() -> None:
         if parsed:
             _rebuild_page(db, p, parsed)
         db.save()
-        npan = len(parsed)
         nlines = sum(len(pp.lines) for pp in parsed)
-        print(f"[{n+1}/{len(todo)}] page {p.index}: {npan} panels, {nlines} text lines"
-              + (f"  ERR {res['error']}" if res.get("error") else ""))
+        print(f"[{n+1}/{len(todo)}] page {p.index}: {len(parsed)} panels, {nlines} text lines"
+              + note + (f"  ERR {res['error']}" if res.get("error") else ""))
 
     db.save()
     print(f"done -> {db.path}")

@@ -37,14 +37,17 @@ def looks_like_reasoning(text: str) -> bool:
 
 
 def ask_vision(image_path: str, prompt: str, *, num_predict: int = 1200,
-               timeout: int = 300) -> dict:
+               timeout: int = 300, extra_options: dict | None = None) -> dict:
     img_b64 = base64.b64encode(open(image_path, "rb").read()).decode()
+    opts = {"num_predict": num_predict, "num_ctx": 16384, "temperature": 0.35}
+    # temp 0.15 was too low: near-identical panel prompts collapsed onto one
+    # canned opening. But page-level extraction can loop on dense pages
+    # ("FLASH | FLASH" x500) -- callers pass a repeat_penalty for that.
+    if extra_options:
+        opts.update(extra_options)
     payload = {
         "model": VISION_MODEL, "prompt": prompt, "images": [img_b64],
-        "stream": False, "think": False,
-        # temp 0.15 was too low: ~18 near-identical panel prompts collapsed onto
-        # one canned opening ("Rain lashed the graves...") for a whole page.
-        "options": {"num_predict": num_predict, "num_ctx": 16384, "temperature": 0.35},
+        "stream": False, "think": False, "options": opts,
     }
     try:
         r = subprocess.run(
