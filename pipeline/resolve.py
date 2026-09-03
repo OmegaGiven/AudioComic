@@ -33,7 +33,10 @@ yes no ok okay sure fine well hey wait stop look listen come go get got give tak
 sorry please thanks thank sir maam man dude kid son dad mom mama papa mother father
 brother sister boss chief doctor captain sergeant lieutenant colonel general
 everyone everybody someone somebody nobody anyone people person folks friend buddy
-pal boy girl lady god hell damn christ lord jesus death dead alive alone lost cold
+pal boy girl lady god hell damn christ lord jesus professor mister missus madam
+maam gentlemen ladies officer detective agent
+ive ill id im weve well wed youve youll hes shes thats theres heres whats
+boy girl lady death dead alive alone lost cold
 hot warm dark light hungry thirsty tired weary scared afraid ready done finished
 gone home real true good bad evil great fine better worse right wrong late early
 sick hurt safe free clear sure certain sorry glad happy proud angry mad calm quiet
@@ -45,10 +48,12 @@ other same enough only own new old young big small long short high low
 
 
 def _ok(name: str) -> bool:
-    words = [w.lower().strip(".'\"—-") for w in name.split()]
-    if not words or not words[0]:
+    words = [re.sub(r"[^a-z]", "", w.lower()) for w in name.split()]
+    words = [w for w in words if w]
+    if not words:
         return False
-    # a name is never a gerund / present participle
+    # a name is never a gerund / present participle, and the first token is
+    # never a contraction ("I've said...")
     if any(w.endswith("ing") for w in words):
         return False
     return not all(w in _COMMON for w in words)
