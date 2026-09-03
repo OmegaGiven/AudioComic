@@ -129,6 +129,31 @@ function fmtDur(s) {
   const m = Math.round(s / 60);
   return ` · ${m} min`;
 }
+function clockOf(sec) {
+  const d = new Date(sec * 1000);
+  const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  return sameDay ? t : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${t}`;
+}
+function elapsed(from, to) {
+  const mins = Math.round((to - from) / 60);
+  if (mins < 1) return "under a minute";
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+function fmtWhen(j) {
+  if (!j.created) return "";
+  const added = `Added ${clockOf(j.created)}`;
+  if (j.status === "done" && j.finished)
+    return `${added} · finished ${clockOf(j.finished)} · took ${elapsed(j.created, j.finished)}`;
+  if ((j.status === "failed" || j.status === "cancelled") && j.finished)
+    return `${added} · stopped ${clockOf(j.finished)}`;
+  if (j.status === "running")
+    return `${added} · running ${elapsed(j.created, Date.now() / 1000)}`;
+  return added;
+}
 function statusText(j) {
   if (j.status === "queued") return `Waiting — position ${j.queue_pos} in line`;
   if (j.status === "running") return j.progress ? `${j.phase_label}: ${j.progress}` : (j.phase_label || "Starting") + "…";
@@ -188,6 +213,7 @@ async function refreshQueue() {
       <div class="jobmain">
         <span class="jobtitle">${jobTitle(j)}</span>
         <span class="jobstatus">${statusText(j)}</span>
+        <span class="jobtime">${fmtWhen(j)}</span>
       </div>
       ${showTrack ? track(j) : ""}
       <div class="jobactions">${actions.join(" ")}</div>
