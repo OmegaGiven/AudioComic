@@ -14,12 +14,8 @@
   <nav aria-label="Sections">
     <ul class="tabs" role="tablist">
       <li role="presentation">
-        <button role="tab" id="tab-generate" aria-controls="view-generate"
-                aria-selected="true">Generate</button>
-      </li>
-      <li role="presentation">
         <button role="tab" id="tab-queue" aria-controls="view-queue"
-                aria-selected="false" tabindex="-1">Queue <span id="queue-count" class="badge" hidden></span></button>
+                aria-selected="true">Comics <span id="queue-count" class="badge" hidden></span></button>
       </li>
       <li role="presentation">
         <button role="tab" id="tab-review" aria-controls="view-review"
@@ -31,54 +27,40 @@
 
 <main id="main">
 
-  <!-- ============ GENERATE ============ -->
-  <section id="view-generate" role="tabpanel" aria-labelledby="tab-generate">
-    <h1>Turn a comic into an audio comic</h1>
-    <p class="lede">Choose a comic file, start it, and download the narrated audio when it's done.</p>
+  <!-- ============ COMICS (upload + queue) ============ -->
+  <section id="view-queue" role="tabpanel" aria-labelledby="tab-queue">
+    <h1 class="visually-hidden">Comics</h1>
 
-    <form id="gen-form">
-      <div class="field">
+    <form id="gen-form" class="uploadbar" aria-label="Add a comic">
+      <div class="ub-file">
         <label for="file">Comic file</label>
-        <p id="file-help" class="help">Accepted: .cbz, .cbr, .pdf, .zip. You can also drag a file onto this area.</p>
-        <div id="dropzone" class="dropzone">
-          <input type="file" id="file" name="file" accept=".cbz,.cbr,.pdf,.zip"
-                 aria-describedby="file-help file-chosen" required>
-          <span id="file-chosen" class="chosen" aria-live="polite">No file chosen</span>
-        </div>
+        <input type="file" id="file" name="file" accept=".cbz,.cbr,.pdf,.zip"
+               aria-describedby="file-help" required>
       </div>
-
-      <div class="row">
-        <div class="field">
-          <label for="series">Series name <span class="opt">(optional)</span></label>
-          <input type="text" id="series" name="series" autocomplete="off">
-        </div>
-        <div class="field narrow">
-          <label for="number">Issue number <span class="opt">(optional)</span></label>
-          <input type="text" id="number" name="number" inputmode="numeric" autocomplete="off">
-        </div>
+      <div class="ub-field">
+        <label for="series">Series</label>
+        <input type="text" id="series" name="series" autocomplete="off" placeholder="optional">
       </div>
-
+      <div class="ub-field ub-num">
+        <label for="number">Issue&nbsp;#</label>
+        <input type="text" id="number" name="number" inputmode="numeric" autocomplete="off" placeholder="opt.">
+      </div>
+      <button type="submit" id="submit" class="primary">Add</button>
+      <p id="file-help" class="help">Accepted: .cbz, .cbr, .pdf, .zip. You can also drop a file here.</p>
       <p id="form-error" class="form-error" role="alert" hidden></p>
-      <button type="submit" id="submit" class="primary">Add to queue</button>
       <p id="add-ok" class="add-ok" role="status" aria-live="polite" hidden></p>
     </form>
-  </section>
 
-  <!-- ============ QUEUE ============ -->
-  <section id="view-queue" role="tabpanel" aria-labelledby="tab-queue" hidden>
-    <h1>Queue</h1>
-    <p class="lede">Every comic you've added. One is generated at a time; the rest wait in line.</p>
+    <h2 id="queue-h">Queue</h2>
     <p id="queue-summary" class="progress-status" role="status" aria-live="polite">Loading&hellip;</p>
     <ul id="queue-list" class="joblist"></ul>
   </section>
 
   <!-- ============ REVIEW ============ -->
-
-  <!-- ============ REVIEW ============ -->
   <section id="view-review" role="tabpanel" aria-labelledby="tab-review" hidden>
     <h1>Review database</h1>
     <p class="lede">Open a finished comic to check what the AI tagged against the actual pages, and correct it.</p>
-    <div class="field">
+    <div class="ub-field" style="max-width:22rem">
       <label for="review-job">Comic</label>
       <select id="review-job"><option value="">Loading&hellip;</option></select>
     </div>

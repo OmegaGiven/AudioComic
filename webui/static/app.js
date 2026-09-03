@@ -7,7 +7,7 @@ const api = (p, o) => fetch(p, o).then(async r => {
   return body;
 });
 let PHASES = [];
-api("/api/phases").then(p => { PHASES = p; });
+api("/api/phases").then(p => { PHASES = p; refreshQueue(); });
 
 /* ---------- tabs ---------- */
 const tabs = [...document.querySelectorAll('[role="tab"]')];
@@ -19,8 +19,6 @@ function selectTab(tab) {
     $("#" + t.getAttribute("aria-controls")).hidden = !on;
   });
   tab.focus();
-  if (tab.id === "tab-queue") { refreshQueue(); startQueuePoll(); }
-  else stopQueuePoll();
   if (tab.id === "tab-review") loadReviewJobs();
 }
 tabs.forEach((t, i) => {
@@ -33,30 +31,26 @@ tabs.forEach((t, i) => {
   });
 });
 
-/* ---------- generate ---------- */
+/* ---------- upload ---------- */
 const form = $("#gen-form");
 const fileInput = $("#file");
-const chosen = $("#file-chosen");
-const dropzone = $("#dropzone");
 const errBox = $("#form-error");
-const submit = $("#submit");
 const addOk = $("#add-ok");
+const submit = $("#submit");
 
 fileInput.addEventListener("change", () => {
-  chosen.textContent = fileInput.files.length
-    ? `Chosen: ${fileInput.files[0].name}` : "No file chosen";
   const stem = (fileInput.files[0]?.name || "").replace(/\.[^.]+$/, "");
   const m = stem.match(/^(.+?)[\s_#-]+0*(\d{1,4})\b/);
   if (m && !$("#series").value) $("#series").value = m[1].trim();
   if (m && !$("#number").value) $("#number").value = m[2];
 });
-["dragenter", "dragover"].forEach(ev => dropzone.addEventListener(ev, e => {
-  e.preventDefault(); dropzone.classList.add("drag");
+["dragenter", "dragover"].forEach(ev => form.addEventListener(ev, e => {
+  e.preventDefault(); form.classList.add("drag");
 }));
-["dragleave", "drop"].forEach(ev => dropzone.addEventListener(ev, e => {
-  e.preventDefault(); dropzone.classList.remove("drag");
+["dragleave", "drop"].forEach(ev => form.addEventListener(ev, e => {
+  e.preventDefault(); form.classList.remove("drag");
 }));
-dropzone.addEventListener("drop", e => {
+form.addEventListener("drop", e => {
   if (e.dataTransfer.files.length) {
     fileInput.files = e.dataTransfer.files;
     fileInput.dispatchEvent(new Event("change"));
@@ -67,7 +61,7 @@ function showError(msg) { errBox.textContent = msg; errBox.hidden = false; }
 form.addEventListener("submit", async e => {
   e.preventDefault();
   errBox.hidden = true; addOk.hidden = true;
-  if (!fileInput.files.length) return showError("Please choose a comic file first.");
+  if (!fileInput.files.length) return showError("Choose a comic file first.");
   submit.disabled = true; submit.textContent = "Adding…";
   const fd = new FormData();
   fd.append("file", fileInput.files[0]);
@@ -76,15 +70,15 @@ form.addEventListener("submit", async e => {
   try {
     const job = await api("/api/jobs", { method: "POST", body: fd });
     addOk.textContent = job.status === "running"
-      ? "Added — now generating. See the Queue tab."
-      : `Added to the queue (position ${job.queue_pos}). See the Queue tab.`;
+      ? `Added "${jobTitle(job)}" — generating now.`
+      : `Added "${jobTitle(job)}" — position ${job.queue_pos} in line.`;
     addOk.hidden = false;
-    form.reset(); chosen.textContent = "No file chosen";
+    form.reset();
     refreshQueue();
   } catch (err) {
     showError(err.message);
   } finally {
-    submit.disabled = false; submit.textContent = "Add to queue";
+    submit.disabled = false; submit.textContent = "Add";
   }
 });
 
@@ -95,12 +89,11 @@ const npName = $("#np-name");
 let nowPlayingId = null;
 
 function playAudio(url, name, id) {
-  if (nowPlayingId === id && !player.paused) return;
   npName.textContent = name;
   player.src = url;
   np.hidden = false;
   nowPlayingId = id || url;
-  player.play().catch(() => {});   // autoplay may be blocked; user hits play
+  player.play().catch(() => {});
 }
 $("#np-close").addEventListener("click", () => {
   player.pause();
@@ -110,10 +103,10 @@ $("#np-close").addEventListener("click", () => {
   nowPlayingId = null;
   refreshQueue();
 });
-player.addEventListener("play", () => { markPlaying(); });
-player.addEventListener("pause", () => { markPlaying(); });
+player.addEventListener("play", markPlaying);
+player.addEventListener("pause", markPlaying);
 function markPlaying() {
-  document.querySelectorAll('[data-play-id]').forEach(b => {
+  document.querySelectorAll("[data-play-id]").forEach(b => {
     const on = b.dataset.playId === String(nowPlayingId) && !player.paused;
     b.textContent = on ? "Pause" : "Play";
     b.setAttribute("aria-pressed", String(on));
@@ -124,10 +117,7 @@ function markPlaying() {
 const queueList = $("#queue-list");
 const queueSummary = $("#queue-summary");
 const queueCount = $("#queue-count");
-let queueTimer = null;
-
-function startQueuePoll() { if (!queueTimer) queueTimer = setInterval(refreshQueue, 2500); }
-function stopQueuePoll() { clearInterval(queueTimer); queueTimer = null; }
+setInterval(refreshQueue, 2500);
 
 function jobTitle(j) {
   return j.series && j.number
@@ -147,6 +137,29 @@ function statusText(j) {
   return "Failed — " + (j.error || "unknown error");
 }
 
+function track(j) {
+  if (!PHASES.length) return "";
+  const cur = PHASES.findIndex(p => p.key === j.phase);
+  const fill = j.status === "done" ? 100 : (j.status === "running" ? j.percent : 0);
+  const dots = PHASES.map((p, i) => {
+    let st = "pending";
+    if (j.status === "done" || i < cur) st = "done";
+    else if (i === cur && j.status === "running") st = "current";
+    const left = PHASES.length === 1 ? 50 : (i / (PHASES.length - 1)) * 100;
+    return `<span class="dot" data-state="${st}" style="left:${left}%" title="${p.label}"></span>`;
+  }).join("");
+  const legend = PHASES.map((p, i) => {
+    let st = "pending";
+    if (j.status === "done" || i < cur) st = "done";
+    else if (i === cur && j.status === "running") st = "current";
+    return `<span data-state="${st}">${p.label}</span>`;
+  }).join("");
+  return `<div class="track" role="img" aria-label="Phase ${Math.max(cur + 1, 0)} of ${PHASES.length}: ${statusText(j)}">
+      <span class="fill" style="width:${fill}%"></span>${dots}
+    </div>
+    <div class="phase-legend" aria-hidden="true">${legend}</div>`;
+}
+
 async function refreshQueue() {
   let jobs;
   try { jobs = await api("/api/jobs"); }
@@ -154,28 +167,29 @@ async function refreshQueue() {
 
   const active = jobs.filter(j => j.status === "queued" || j.status === "running");
   queueSummary.textContent = active.length
-    ? `${active.length} in the queue.`
-    : (jobs.length ? "Queue is empty." : "Nothing here yet — add a comic on the Generate tab.");
+    ? `${active.length} being generated or waiting.`
+    : (jobs.length ? "Nothing generating right now." : "No comics yet — add one above.");
   queueCount.hidden = active.length === 0;
   queueCount.textContent = active.length;
 
   queueList.innerHTML = jobs.map(j => {
-    const pct = j.status === "running" ? j.percent : (j.status === "done" ? 100 : 0);
     const actions = [];
     if (j.status === "queued" || j.status === "running")
       actions.push(`<button data-act="cancel" data-id="${j.id}">${j.status === "running" ? "Stop" : "Cancel"}</button>`);
     if (j.status === "done") {
-      actions.push(`<button data-act="play" data-id="${j.id}" data-play-id="${j.id}" data-name="${jobTitle(j).replace(/"/g, "&quot;")}" aria-pressed="false">Play</button>`);
+      const nm = jobTitle(j).replace(/"/g, "&quot;");
+      actions.push(`<button data-act="play" data-id="${j.id}" data-play-id="${j.id}" data-name="${nm}" aria-pressed="false">Play</button>`);
       actions.push(`<a class="btnlink" href="/api/jobs/${j.id}/download" download>Download</a>`);
     }
     if (["done", "failed", "cancelled"].includes(j.status))
       actions.push(`<button data-act="remove" data-id="${j.id}">Remove</button>`);
+    const showTrack = j.status === "running" || j.status === "done";
     return `<li class="jobrow" data-status="${j.status}">
       <div class="jobmain">
         <span class="jobtitle">${jobTitle(j)}</span>
         <span class="jobstatus">${statusText(j)}</span>
       </div>
-      <div class="jobbar" role="img" aria-label="${pct}% done"><span style="width:${pct}%"></span></div>
+      ${showTrack ? track(j) : ""}
       <div class="jobactions">${actions.join(" ")}</div>
     </li>`;
   }).join("");
@@ -202,16 +216,6 @@ queueList.addEventListener("click", async e => {
   } catch (err) { alert(err.message); }
   refreshQueue();
 });
-
-/* keep the badge current even when the tab isn't open */
-setInterval(async () => {
-  try {
-    const jobs = await api("/api/jobs");
-    const n = jobs.filter(j => j.status === "queued" || j.status === "running").length;
-    queueCount.hidden = n === 0;
-    queueCount.textContent = n;
-  } catch {}
-}, 5000);
 
 /* ---------- review (stub) ---------- */
 async function loadReviewJobs() {
