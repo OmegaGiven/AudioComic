@@ -85,10 +85,13 @@ def coalesce_blocks(blocks: list):
     out = []
     for b in blocks:
         j = out[-1] if out else None
+        # join fragments of one box/balloon while the text is still unfinished.
+        # entity may disagree only because Magi clustered the split fragments
+        # differently -- tolerate that unless BOTH carry a (different) id.
+        entity_ok = j is not None and (j.entity == b.entity or not j.entity or not b.entity)
         joinable = (
             j is not None and j.kind == b.kind and j.kind in ("CAPTION", "DIALOGUE")
-            and (j.entity == b.entity or (not j.entity and not b.entity))
-            and _unfinished(j.text_raw)
+            and entity_ok and _unfinished(j.text_raw)
         )
         if joinable:
             left = re.sub(r"[-—]+\s*$", "", j.text_raw.rstrip())
