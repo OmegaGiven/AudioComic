@@ -71,10 +71,17 @@ def dedupe(segs: list[dict]) -> list[dict]:
     return out
 
 
+_DANGLING = re.compile(
+    r"(?:[,:;]|--|—|\b(?:and|the|of|to|an?|in|on|at|with|but|or|for|as|"
+    r"who|that|which|when|while|their|his|her|its|my|your|our))$", re.I)
+
+
 def _unfinished(t: str) -> bool:
-    """The text reads as a fragment continued on the next line/box."""
-    t = t.strip().rstrip("\"'”’)")
-    return bool(re.search(r"[,:;]$|[-—]$", t)) or not re.search(r"[.?!]$", t)
+    """The text ends mid-thought -- a comma / dash, a dangling function word,
+    or (in a normal-case caption) a lowercase letter. A complete short line
+    like "SPACE SECTOR 2814" is NOT unfinished even with no period."""
+    t = t.strip().rstrip("\"'”’) ")
+    return bool(_DANGLING.search(t) or (t[-1:].islower()))
 
 
 def coalesce_blocks(blocks: list):
@@ -107,6 +114,20 @@ def coalesce_blocks(blocks: list):
 def looks_third_person(t: str) -> bool:
     return bool(re.search(r"\b(their|his|her)\b", t) and
                not re.search(r"\b(I|me|my|you|your|we|our)\b", t))
+
+
+def sounds_spoken(t: str) -> bool:
+    """A box the model tagged CAPTION but that is really a line of dialogue --
+    2nd person plus a question or a direct address. Narration boxes are 3rd
+    person and past tense; this catches a phone call lettered in caption
+    boxes ("HOW CAN YOU EVEN THINK ABOUT IT, RAY?")."""
+    first_second = re.search(r"\b(you|your|you're|you'?ll|i|i'?m|me|my|we|us)\b", t, re.I)
+    if not first_second:
+        return False
+    vocative = re.search(r",\s*[A-Za-z]{2,}[.!?]*$", t)     # "..., Ray?" / "..., CARTER."
+    return bool(t.rstrip().endswith(("?", "!")) or vocative
+                or re.match(r"\s*(please|don'?t|do not|listen|look|wait|stop|get|give|tell|"
+                            r"forget|hold)\b", t, re.I))
 
 
 _SAFE_CAPS = set("""A An The And But Or So If Then As At By For From In Into Of On To Up With
@@ -222,15 +243,20 @@ def main() -> None:
                 txt = clean(b.text_clean or b.text_raw)
                 if not txt or JUNK.search(txt):
                     continue
-                if b.kind == "CAPTION":
+                kind = b.kind
+                if kind == "CAPTION" and sounds_spoken(txt):
+                    kind = "DIALOGUE"     # a phone call lettered in caption boxes
+                if kind == "CAPTION":
                     segs.append({"speaker": "NARRATOR", "text": txt})
                     prev = "NARRATOR"
-                elif b.kind == "SFX":
+                elif kind == "SFX":
                     added = sfx_seg(txt, prev)
                     if added:
                         segs.append({"speaker": added[0], "text": added[1]})
-                else:  # DIALOGUE
+                else:  # DIALOGUE (incl. a reclassified caption)
                     ent = db.entity(b.entity) if b.entity else None
+                    if b.kind == "CAPTION":
+                        ent = None
                     name = ent.name if ent and ent.name else None
                     if name:
                         segs.append({"speaker": name, "text": txt})
