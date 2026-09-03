@@ -117,15 +117,45 @@ def download(jid: str) -> FileResponse:
     return FileResponse(path, media_type="audio/mpeg", filename=job.mp3)
 
 
-@app.get("/api/jobs/{jid}/db")
-def get_db(jid: str) -> dict:
+def _work_file(jid: str, name: str) -> Path:
     job = store.get(jid)
     if not job:
         raise HTTPException(404, "No job with that id.")
-    p = job.dir / "work" / "comic.json"
+    p = job.dir / "work" / name
     if not p.exists():
-        raise HTTPException(404, "The database isn't built yet.")
-    return json.loads(p.read_text())
+        raise HTTPException(404, f"{name} isn't available yet.")
+    return p
+
+
+@app.get("/api/jobs/{jid}/db")
+def get_db(jid: str) -> dict:
+    return json.loads(_work_file(jid, "comic.json").read_text())
+
+
+@app.get("/api/jobs/{jid}/narrative")
+def get_narrative(jid: str) -> dict:
+    try:
+        return json.loads(_work_file(jid, "narrative.json").read_text())
+    except HTTPException:
+        return {}
+
+
+@app.get("/api/jobs/{jid}/pages/{idx}")
+def get_page_image(jid: str, idx: int) -> FileResponse:
+    db = json.loads(_work_file(jid, "comic.json").read_text())
+    page = next((p for p in db["pages"] if p["index"] == idx), None)
+    if not page or not Path(page["image"]).exists():
+        raise HTTPException(404, "No such page.")
+    return FileResponse(page["image"])
+
+
+@app.get("/api/jobs/{jid}/panels/{pid}")
+def get_panel_image(jid: str, pid: str) -> FileResponse:
+    db = json.loads(_work_file(jid, "comic.json").read_text())
+    panel = next((p for p in db["panels"] if p["id"] == pid), None)
+    if not panel or not Path(panel["image"]).exists():
+        raise HTTPException(404, "No such panel.")
+    return FileResponse(panel["image"])
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

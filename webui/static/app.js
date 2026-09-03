@@ -217,15 +217,116 @@ queueList.addEventListener("click", async e => {
   refreshQueue();
 });
 
-/* ---------- review (stub) ---------- */
+/* ---------- review / database ---------- */
+const dbState = { jid: null, db: null, narr: {}, page: 0, pages: [] };
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
 async function loadReviewJobs() {
   const sel = $("#review-job");
   try {
     const jobs = await api("/api/jobs");
-    const done = jobs.filter(j => j.status === "done");
-    sel.innerHTML = `<option value="">${done.length ? "Choose a comic…" : "No finished comics yet"}</option>`
-      + done.map(j => `<option value="${j.id}">${jobTitle(j)}</option>`).join("");
+    const usable = jobs.filter(j => ["done", "failed"].includes(j.status)
+      || (j.status === "running" && j.percent > 30));
+    sel.innerHTML = `<option value="">${usable.length ? "Choose a comic…" : "No comics with a database yet"}</option>`
+      + usable.map(j => `<option value="${j.id}" ${j.id === dbState.jid ? "selected" : ""}>${esc(jobTitle(j))} — ${j.status}</option>`).join("");
   } catch {
     sel.innerHTML = `<option value="">Couldn't load jobs</option>`;
   }
 }
+
+$("#review-job").addEventListener("change", e => { if (e.target.value) openDb(e.target.value); });
+$("#page-prev").addEventListener("click", () => gotoPage(dbState.page - 1));
+$("#page-next").addEventListener("click", () => gotoPage(dbState.page + 1));
+
+async function openDb(jid) {
+  dbState.jid = jid;
+  $("#db-summary").textContent = "Loading database…";
+  $("#db-view").hidden = true;
+  try {
+    dbState.db = await api(`/api/jobs/${jid}/db`);
+    dbState.narr = await api(`/api/jobs/${jid}/narrative`).catch(() => ({}));
+  } catch (err) {
+    $("#db-summary").textContent = err.message;
+    return;
+  }
+  const d = dbState.db;
+  dbState.pages = d.pages.map(p => p.index).sort((a, b) => a - b);
+  const fm = d.pages.filter(p => p.is_front_matter).length;
+  $("#db-summary").textContent =
+    `${d.panels.length} panels · ${d.blocks.length} text blocks `
+    + `(${d.blocks.filter(b => b.kind === "CAPTION").length} caption, `
+    + `${d.blocks.filter(b => b.kind === "DIALOGUE").length} dialogue, `
+    + `${d.blocks.filter(b => b.kind === "SFX").length} sfx) · `
+    + `${d.entities.length} character clusters, `
+    + `${d.entities.filter(e => e.name).length} named · ${fm} front-matter pages skipped`;
+  renderEntities();
+  $("#pagenav").hidden = false;
+  $("#db-view").hidden = false;
+  gotoPage(dbState.pages.find(p => !d.pages.find(x => x.index === p)?.is_front_matter) ?? dbState.pages[0]);
+}
+
+function gotoPage(idx) {
+  if (!dbState.pages.includes(idx)) return;
+  dbState.page = idx;
+  const d = dbState.db;
+  const page = d.pages.find(p => p.index === idx);
+  const pos = dbState.pages.indexOf(idx);
+  $("#page-pos").textContent = `${pos + 1} of ${dbState.pages.length}${page.is_front_matter ? " (front matter — skipped)" : ""}`;
+  $("#page-prev").disabled = pos === 0;
+  $("#page-next").disabled = pos === dbState.pages.length - 1;
+
+  const panels = d.panels.filter(p => p.page === idx).sort((a, b) => a.index - b.index);
+  const scenes = panels.map(p => p.scene).filter(Boolean).join(" ");
+  const img = $("#db-pageimg");
+  img.src = `/api/jobs/${dbState.jid}/pages/${idx}`;
+  img.alt = scenes || `Page ${pos + 1}, no description generated`;
+  $("#db-pagecap").textContent = `Page ${pos + 1}`;
+
+  const entName = id => {
+    const e = d.entities.find(x => x.id === id);
+    return e ? (e.name || e.appearance || e.id) : "—";
+  };
+  $("#db-panels").innerHTML = panels.map((p, i) => {
+    const blocks = d.blocks.filter(b => b.panel === p.id)
+      .sort((a, b) => a.order - b.order);
+    const rows = blocks.map(b => `<tr data-kind="${b.kind}">
+        <td>${b.kind}</td>
+        <td>${b.kind === "DIALOGUE" ? esc(entName(b.entity)) : ""}</td>
+        <td>${esc(b.text_raw)}</td>
+      </tr>`).join("") || `<tr><td colspan="3" class="muted">no text transcribed</td></tr>`;
+    return `<section class="dbpanel">
+      <h3>Panel ${i + 1}</h3>
+      <p class="dbscene">${p.scene ? esc(p.scene) : '<span class="muted">no scene description</span>'}</p>
+      <table class="dbtable"><thead><tr><th>Kind</th><th>Speaker</th><th>Text</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+    </section>`;
+  }).join("") || '<p class="muted">No panels on this page.</p>';
+
+  const spoken = dbState.narr[String(idx)] || [];
+  $("#db-spoken-list").innerHTML = spoken.length
+    ? spoken.map(s => `<li><b>${esc(s.speaker)}:</b> ${esc(s.text)}</li>`).join("")
+    : "<li class=muted>nothing (page skipped, or no assemble output)</li>";
+
+  $("#page-label").focus?.();
+}
+
+function renderEntities() {
+  const d = dbState.db;
+  const rows = d.entities
+    .map(e => ({ ...e, n: d.blocks.filter(b => b.entity === e.id).length }))
+    .filter(e => e.n > 0 || e.name)
+    .sort((a, b) => b.n - a.n)
+    .map(e => `<li>
+      <b>${esc(e.name || e.id)}</b>
+      ${e.name ? `<span class="muted">(conf ${e.name_confidence})</span>` : `<span class="muted">unnamed${e.appearance ? " — " + esc(e.appearance) : ""}</span>`}
+      <span class="muted">· ${e.n} line${e.n === 1 ? "" : "s"}</span>
+    </li>`).join("");
+  $("#db-entity-list").innerHTML = rows || "<li class=muted>no character clusters</li>";
+}
+
+document.addEventListener("keydown", e => {
+  if ($("#view-review").hidden || e.target.matches("input,select,textarea")) return;
+  if (e.key === "j") gotoPage(dbState.page + 1);
+  if (e.key === "k") gotoPage(dbState.page - 1);
+});

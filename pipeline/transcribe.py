@@ -18,7 +18,7 @@ import sys
 from pipeline.comicdb import Block, ComicDB, Vision
 from pipeline.vision import VISION_MODEL, ask_vision, looks_like_reasoning, strip_think
 
-PROMPT_V = 6
+PROMPT_V = 7
 PROMPT = """Describe this comic panel in 1-2 sentences: the scene, the people present and their actions and expressions. Refer to each person ONLY by appearance (clothing, build, posture) -- do not use any character name, hero name, villain name, or franchise, even one you recognise.
 
 Then transcribe every piece of dialogue or caption text visible in the panel, in reading order, formatted exactly as:
@@ -29,7 +29,7 @@ CAPTION: text
 
 Copy the text exactly as lettered. Do not fix spelling, do not paraphrase, do not skip anything.
 
-Respond directly with the description then the transcription. /no_think"""
+Respond directly with the description then the transcription. Do not explain your reasoning process."""
 
 LINE_RE = re.compile(r"^\s*[-*]?\s*(SPEAKER|CAPTION)\s*:\s*(.+?)\s*$", re.I)
 SFX_SHAPE = re.compile(r"^[A-Z][A-Z'\-]{1,10}[!?.]*$")

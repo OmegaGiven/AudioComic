@@ -56,16 +56,40 @@
     <ul id="queue-list" class="joblist"></ul>
   </section>
 
-  <!-- ============ REVIEW ============ -->
+  <!-- ============ REVIEW / DB ============ -->
   <section id="view-review" role="tabpanel" aria-labelledby="tab-review" hidden>
-    <h1>Review database</h1>
-    <p class="lede">Open a finished comic to check what the AI tagged against the actual pages, and correct it.</p>
-    <div class="ub-field" style="max-width:22rem">
-      <label for="review-job">Comic</label>
-      <select id="review-job"><option value="">Loading&hellip;</option></select>
+    <h1 class="visually-hidden">Review database</h1>
+    <div class="dbbar">
+      <div class="ub-field">
+        <label for="review-job">Comic</label>
+        <select id="review-job"><option value="">Loading&hellip;</option></select>
+      </div>
+      <div class="ub-field pagenav" id="pagenav" hidden>
+        <label id="page-label" for="page-prev">Page</label>
+        <span>
+          <button type="button" id="page-prev" class="navbtn" aria-label="Previous page">&larr;</button>
+          <span id="page-pos" aria-live="polite">&ndash;</span>
+          <button type="button" id="page-next" class="navbtn" aria-label="Next page">&rarr;</button>
+        </span>
+      </div>
     </div>
-    <div id="review-body" aria-live="polite">
-      <p class="help">Pick a comic above. Page-by-page review with editing is the next build step.</p>
+
+    <p id="db-summary" class="progress-status" aria-live="polite">Pick a comic above.</p>
+
+    <div id="db-view" class="dbview" hidden>
+      <figure class="dbpage">
+        <img id="db-pageimg" alt="">
+        <figcaption id="db-pagecap"></figcaption>
+      </figure>
+      <div id="db-panels" class="dbpanels" aria-live="polite"></div>
+      <details id="db-spoken" class="dbspoken">
+        <summary>What gets spoken on this page</summary>
+        <ol id="db-spoken-list"></ol>
+      </details>
+      <details id="db-entities" class="dbentities">
+        <summary>Characters (whole comic)</summary>
+        <ul id="db-entity-list"></ul>
+      </details>
     </div>
   </section>
 
