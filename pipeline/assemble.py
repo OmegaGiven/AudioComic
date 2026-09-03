@@ -26,8 +26,20 @@ sys.path.insert(0, str(REPO_ROOT))
 from panelspeak.onomatopoeia import normalize_vocalization  # noqa: E402
 from pipeline.comicdb import ComicDB  # noqa: E402
 
-JUNK = re.compile(r"decomics\.com|dccomics\.com|conversion by|^\s*\[\d\d:\d\d\]|"
-                  r"first issue of eight", re.I)
+JUNK = re.compile(r"decomics\.com|dccomics\.com|conversion by|wildstorm|^\s*\[\d\d:\d\d\]|"
+                  r"first issue of eight|issue \w+ of \w+|sep '?\d\d|^\s*\*?\s*20\d\d\s*$", re.I)
+
+# cover / credits pages: OCR'd title treatment + creator names, no story text.
+_FRAG = re.compile(r"^[^a-z]{0,40}$")  # no lowercase letters at all
+
+
+def looks_like_credits(texts: list[str]) -> bool:
+    txts = [t.strip() for t in texts if t.strip()]
+    if len(txts) < 2:
+        return False
+    frag = sum(1 for t in txts
+               if len(t.split()) <= 3 and _FRAG.match(t) and not t.rstrip()[-1:] in ".!?")
+    return frag / len(txts) >= 0.7
 
 
 def clean(t: str) -> str:
@@ -101,6 +113,9 @@ def main() -> None:
         blocks_here = [b for pn in panels for b in db.blocks(panel=pn.id)
                        if b.kind in ("CAPTION", "DIALOGUE") and not JUNK.search(b.text_raw)]
         if not blocks_here:
+            continue
+        if page.index <= 3 and looks_like_credits([b.text_raw for b in blocks_here]):
+            print(f"  page {page.index}: skipped (looks like cover/credits)")
             continue
 
         segs: list[dict] = []

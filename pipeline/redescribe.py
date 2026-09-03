@@ -44,14 +44,18 @@ def _prompt(context: list[str]) -> str:
                 f"Do not introduce any other name.")
     else:
         lead = "Refer to any person only by appearance -- do not use any character or franchise name."
-    return (f"{lead}\n\nDescribe this comic panel in 1-3 sentences for an audiobook: "
+    return (f"{lead}\n\nDescribe THIS panel in 1-3 sentences for an audiobook: "
             f"the setting, what each person is doing, and their expression. "
-            f"Narrate it as a scene ('Rain lashed the graves.'), not 'the panel shows'. "
+            f"Open with the concrete subject and action you actually see in this panel "
+            f"(for example 'A man in a military uniform holds a child.'). "
+            f"Describe only what is visible in this panel -- do NOT invent weather, "
+            f"lighting, time of day, or mood that is not clearly shown, and do NOT carry "
+            f"over details from other panels. Write it as prose narration, not 'the panel shows'. "
             f"Do NOT transcribe or mention any lettering, dialogue, caption, or sound effect. "
             f"Reply with only the description.")
 
 
-REDESC_V = 3  # bump to force Pass 2 to re-run every panel
+REDESC_V = 4  # bump to force Pass 2 to re-run every panel
 
 
 def _sig(context: list[str]) -> str:

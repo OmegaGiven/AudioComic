@@ -42,7 +42,9 @@ def ask_vision(image_path: str, prompt: str, *, num_predict: int = 1200,
     payload = {
         "model": VISION_MODEL, "prompt": prompt, "images": [img_b64],
         "stream": False, "think": False,
-        "options": {"num_predict": num_predict, "num_ctx": 16384, "temperature": 0.15},
+        # temp 0.15 was too low: ~18 near-identical panel prompts collapsed onto
+        # one canned opening ("Rain lashed the graves...") for a whole page.
+        "options": {"num_predict": num_predict, "num_ctx": 16384, "temperature": 0.35},
     }
     try:
         r = subprocess.run(
