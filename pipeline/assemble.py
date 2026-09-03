@@ -71,9 +71,12 @@ def sfx_seg(text: str, prev_speaker: str):
 def merge(segs: list[dict]) -> list[dict]:
     out: list[dict] = []
     for s in segs:
-        if (out and out[-1]["speaker"] == "NARRATOR" == s["speaker"]
-                and out[-1].get("_gen") and s.get("_gen")):
-            out[-1]["text"] = f"{out[-1]['text']} {s['text']}".strip()
+        same = out and out[-1]["speaker"] == s["speaker"]
+        gen_run = same and out[-1].get("_gen") and s.get("_gen")
+        voice_run = same and s["speaker"] == "A VOICE"
+        if gen_run or voice_run:
+            joiner = "" if out[-1]["text"].endswith((".", "!", "?", '"')) else "."
+            out[-1]["text"] = f"{out[-1]['text']}{joiner} {s['text']}".strip()
         else:
             out.append(dict(s))
     for s in out:
@@ -126,12 +129,10 @@ def main() -> None:
                         segs.append({"speaker": "NARRATOR", "text": txt})
                         prev = "NARRATOR"
                     else:
-                        inner = txt.strip('"“” ')
-                        if segs and segs[-1]["text"].startswith("A voice says:"):
-                            segs[-1]["text"] = f"{segs[-1]['text'].rstrip('.')}. {inner}"
-                        else:
-                            segs.append({"speaker": "NARRATOR", "text": f"A voice says: {inner}"})
-                        prev = "NARRATOR"
+                        # unknown speaker -> a distinct voice, line spoken
+                        # verbatim (no "a voice says" wrapper read by the narrator)
+                        segs.append({"speaker": "A VOICE", "text": txt.strip('"“” ')})
+                        prev = "A VOICE"
 
         narrative[str(page.index)] = merge(dedupe(segs))
 

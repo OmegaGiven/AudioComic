@@ -18,8 +18,8 @@ def k(script):
 
 # --- clean_for_speech: no lowercasing (that was a Piper/espeak workaround) ---
 
-def test_keeps_case(k):
-    assert k.clean_for_speech("IT is DONE") == "IT is DONE"
+def test_decaps_mostly_caps(k):
+    assert k.clean_for_speech("IT IS DONE") == "It is done"
 
 
 def test_strips_urls_and_collapses_whitespace(k):
@@ -97,3 +97,12 @@ def test_prepare_segments_orders_pages_numerically(k):
     narrative = {"10": [{"speaker": "NARRATOR", "text": "ten"}],
                  "2": [{"speaker": "NARRATOR", "text": "two"}]}
     assert [s.text for s in k.prepare_segments(narrative)] == ["two", "ten"]
+
+
+def test_decaps_allcaps_line(k):
+    out = k.clean_for_speech("I HEAR YOU OUT THERE IN DEEP SPACE.")
+    assert out == "I hear you out there in deep space."
+
+
+def test_decaps_leaves_normal_text(k):
+    assert k.clean_for_speech("Rain lashed the graves.") == "Rain lashed the graves."

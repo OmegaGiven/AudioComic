@@ -136,18 +136,21 @@ def test_assemble_skips_front_matter_and_uses_verbatim(tmp_path):
     assert all("KKK" not in s["text"] for s in segs)
 
 
-def test_assemble_unknown_speaker_is_reported_speech(tmp_path):
+def test_assemble_unknown_speaker_gets_a_distinct_voice(tmp_path):
     db = _assemble_db(tmp_path)
     db.replace_blocks_for_panel("p003_00", [
-        Block(id="b9", panel="p003_00", order=0, kind="DIALOGUE",
-              text_raw="Who goes there?", entity=None)])
+        Block(id="b8", panel="p003_00", order=0, kind="DIALOGUE",
+              text_raw="Who goes there?", entity=None),
+        Block(id="b9", panel="p003_00", order=1, kind="DIALOGUE",
+              text_raw="Answer me!", entity=None)])
     db.save()
     import sys
     sys.argv = ["assemble", str(tmp_path)]
     assemble.main()
     nar = json.loads((tmp_path / "narrative.json").read_text())
-    assert nar["3"][-1]["speaker"] == "NARRATOR"
-    assert "A voice says: Who goes there?" in nar["3"][-1]["text"]
+    voice = [s for s in nar["3"] if s["speaker"] == "A VOICE"]
+    assert len(voice) == 1  # consecutive unknown lines merged
+    assert voice[0]["text"] == "Who goes there? Answer me!"
 
 
 # --- regression: bugs the full-issue run exposed ------------------------

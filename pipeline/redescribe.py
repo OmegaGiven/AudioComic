@@ -48,10 +48,10 @@ def _prompt(context: list[str]) -> str:
             f"the setting, what each person is doing, and their expression. "
             f"Narrate it as a scene ('Rain lashed the graves.'), not 'the panel shows'. "
             f"Do NOT transcribe or mention any lettering, dialogue, caption, or sound effect. "
-            f"/no_think")
+            f"Reply with only the description.")
 
 
-REDESC_V = 2  # bump to force Pass 2 to re-run every panel
+REDESC_V = 3  # bump to force Pass 2 to re-run every panel
 
 
 def _sig(context: list[str]) -> str:
@@ -78,8 +78,12 @@ def main() -> None:
     print(f"redescribe: {len(todo)} panels")
     for n, (p, ctx, sig) in enumerate(todo):
         res = ask_vision(p.image, _prompt(ctx), num_predict=300)
-        scene = re.sub(r"\s+", " ", res.get("text", "")).strip().strip('"')
-        scene = re.sub(r"^(the panel shows|this panel( shows)?)[:,]?\s*", "", scene, flags=re.I)
+        scene = res.get("text", "")
+        # the model sometimes appends CAPTION:/SPEAKER: lines anyway -- cut them
+        scene = re.split(r"\b(?:CAPTION|SPEAKER)\s*:", scene)[0]
+        scene = re.sub(r"\s+", " ", scene).strip().strip('"“”')
+        scene = re.sub(r"^(the panel shows|this panel( shows)?|here is [^:]*:?)\s*",
+                       "", scene, flags=re.I)
         db.set_redescribe(p.id, scene, sig)
         db.save()
         print(f"[{n+1}/{len(todo)}] {p.id}  ctx={ctx or '-'}")

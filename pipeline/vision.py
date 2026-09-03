@@ -48,5 +48,7 @@ def ask_vision(image_path: str, prompt: str, *, num_predict: int = 1200,
         d = json.loads(r.stdout.strip().split("\n")[0])
     except Exception as e:
         return {"text": "", "error": str(e)}
-    text = (d.get("response") or "").strip() or (d.get("thinking") or "").strip()
-    return {"text": strip_think(text), "eval_count": d.get("eval_count")}
+    # never fall back to the `thinking` field -- that is the reasoning, not
+    # the answer, and narrating it was the 147-minute bug.
+    return {"text": strip_think((d.get("response") or "").strip()),
+            "eval_count": d.get("eval_count")}

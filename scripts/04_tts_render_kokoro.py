@@ -36,6 +36,8 @@ GENDER_MODEL = "devstral:24b"
 
 SAMPLE_RATE = 24000
 NARRATOR_VOICE = "af_heart"
+# an unidentified speaker ("A VOICE") -- one fixed, distinct-from-narrator voice
+UNKNOWN_VOICE = "am_onyx"
 # gender x age-tone -> a small pool of Kokoro voices, round-robined so a big
 # cast still gets distinct voices. https://huggingface.co/hexgrad/Kokoro-82M
 VOICE_POOLS = {
@@ -85,11 +87,25 @@ def classify_speakers(speakers: list) -> dict:
     return classes
 
 
+def _decaps(text: str) -> str:
+    """Comic lettering is ALL CAPS; Kokoro's G2P then spells short caps words
+    as initialisms ('KKK' -> 'K. K. K.'). If a line is mostly uppercase,
+    lowercase it and restore sentence capitalisation."""
+    letters = [c for c in text if c.isalpha()]
+    if not letters or sum(c.isupper() for c in letters) / len(letters) < 0.6:
+        return text
+    text = text.lower()
+    text = re.sub(r"(^\s*|[.!?]\s+|[\"'“‘]\s*)([a-z])",
+                  lambda m: m.group(1) + m.group(2).upper(), text)
+    text = re.sub(r"\bi\b", "I", text)
+    text = re.sub(r"\bi'(m|ll|ve|d)\b", lambda m: "I'" + m.group(1), text)
+    return text
+
+
 def clean_for_speech(text: str) -> str:
-    """Kokoro's G2P handles normal casing fine (unlike espeak/Piper, which
-    spelled short all-caps words as initialisms), so only strip URLs and
-    collapse whitespace here."""
     text = re.sub(r"https?://\S+", "", text)
+    text = re.sub(r"\([^)]*\)", "", text)
+    text = _decaps(text)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -106,6 +122,9 @@ def load_voice_map(work_dir: Path, speakers: set) -> dict:
         for speaker in new_speakers:
             if speaker == "NARRATOR":
                 voice_map[speaker] = NARRATOR_VOICE
+                continue
+            if speaker == "A VOICE":
+                voice_map[speaker] = UNKNOWN_VOICE
                 continue
             cls = classes.get(speaker.upper())
             if cls is None:
