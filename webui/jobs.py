@@ -26,7 +26,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 JOBS_DIR = Path(__file__).resolve().parent / "jobs"
 
 PHASES = ["segment", "transcribe", "identify", "resolve", "redescribe",
-          "assemble", "render", "publish"]
+          "assemble", "narrate", "render", "publish"]
 PHASE_LABEL = {
     "segment": "Splitting pages into panels",
     "transcribe": "Reading every panel",
@@ -34,6 +34,7 @@ PHASE_LABEL = {
     "resolve": "Working out character names",
     "redescribe": "Describing each scene",
     "assemble": "Writing the script",
+    "narrate": "Polishing the narration",
     "render": "Recording the voices",
     "publish": "Publishing to the library",
 }

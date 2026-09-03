@@ -18,7 +18,7 @@ KOKORO_PY="${KOKORO_PY:-$REPO/bakeoff/.venvs/kokoro/bin/python}"
 OLLAMA="${OLLAMA:-docker exec ollama ollama}"
 [ -x "$SEG_PY" ] || SEG_PY=python3
 
-order=(segment transcribe identify resolve redescribe assemble render publish)
+order=(segment transcribe identify resolve redescribe assemble narrate render publish)
 started=0
 run_phase() { [ "$1" = "$FROM" ] && started=1; [ "$started" = 1 ]; }
 
@@ -42,6 +42,10 @@ if run_phase redescribe; then
 fi
 if run_phase assemble; then
   echo "== assemble =="; PYTHONPATH="$REPO" "$SEG_PY" -m pipeline.assemble "$WORK"
+fi
+if run_phase narrate; then
+  echo "== narrate =="
+  PYTHONPATH="$REPO" "$SEG_PY" -m pipeline.narrate "$WORK" || echo "  narrate skipped (not fatal)"
 fi
 if run_phase render; then
   echo "== render (Kokoro, CPU) =="

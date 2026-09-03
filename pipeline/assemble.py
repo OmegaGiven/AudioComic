@@ -91,8 +91,10 @@ def merge(segs: list[dict]) -> list[dict]:
             out[-1]["text"] = f"{out[-1]['text']}{joiner} {s['text']}".strip()
         else:
             out.append(dict(s))
+    # keep a persistent marker: narrate rewrites only generated scene lines,
+    # never a verbatim caption or a line of dialogue
     for s in out:
-        s.pop("_gen", None)
+        s["gen"] = bool(s.pop("_gen", False))
     return out
 
 
