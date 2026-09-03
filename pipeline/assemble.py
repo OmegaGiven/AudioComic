@@ -71,6 +71,25 @@ def dedupe(segs: list[dict]) -> list[dict]:
     return out
 
 
+def coalesce_blocks(blocks: list):
+    """Per-panel OCR splits one caption box / one speech balloon across its
+    lettered lines. Re-join a run of same-kind, same-entity blocks into one
+    (space-joined -- the fragments already carry their own punctuation)."""
+    out = []
+    for b in blocks:
+        if (out and out[-1].kind == b.kind == "CAPTION") or (
+                out and out[-1].kind == b.kind == "DIALOGUE"
+                and out[-1].entity == b.entity):
+            j = out[-1]
+            left = re.sub(r"[-—]+\s*$", "", j.text_raw.rstrip())
+            right = re.sub(r"^\s*[-—]+", "", b.text_raw.lstrip())
+            j.text_raw = re.sub(r"\s+", " ", f"{left} {right}").strip()
+            j.text_clean = j.text_raw
+        else:
+            out.append(b)
+    return out
+
+
 def looks_third_person(t: str) -> bool:
     return bool(re.search(r"\b(their|his|her)\b", t) and
                not re.search(r"\b(I|me|my|you|your|we|our)\b", t))
@@ -130,7 +149,7 @@ def main() -> None:
             if pn.scene and len(pn.scene.split()) >= 4:
                 segs.append({"speaker": "NARRATOR", "text": clean(pn.scene), "_gen": True})
             prev = segs[-1]["speaker"] if segs else "NARRATOR"
-            for b in db.blocks(panel=pn.id):
+            for b in coalesce_blocks(db.blocks(panel=pn.id)):
                 txt = clean(b.text_clean or b.text_raw)
                 if not txt or JUNK.search(txt):
                     continue
