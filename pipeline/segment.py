@@ -56,7 +56,11 @@ def main() -> None:
     archive, work_dir = Path(sys.argv[1]), Path(sys.argv[2])
     from PIL import Image
 
-    db = ComicDB.load_or_new(work_dir, source=archive.name)
+    m = (re.match(r"^(.+?)[\s_#-]+0*(\d{1,4})\s*$", archive.stem)
+         or re.match(r"^([A-Za-z]{2,}?)0*(\d{1,4})\s*$", archive.stem))
+    series = m.group(1).strip() if m else archive.stem
+    number = int(m.group(2)) if m else None
+    db = ComicDB.load_or_new(work_dir, source=archive.name, series=series, number=number)
     extracted = work_dir / "extracted"
     panels_dir = work_dir / "panels"
     panels_dir.mkdir(parents=True, exist_ok=True)

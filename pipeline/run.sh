@@ -18,7 +18,7 @@ KOKORO_PY="${KOKORO_PY:-$REPO/bakeoff/.venvs/kokoro/bin/python}"
 OLLAMA="${OLLAMA:-docker exec ollama ollama}"
 [ -x "$SEG_PY" ] || SEG_PY=python3
 
-order=(segment transcribe identify resolve redescribe assemble render)
+order=(segment transcribe identify resolve redescribe assemble render publish)
 started=0
 run_phase() { [ "$1" = "$FROM" ] && started=1; [ "$started" = 1 ]; }
 
@@ -47,5 +47,9 @@ if run_phase render; then
   echo "== render (Kokoro, CPU) =="
   CUDA_VISIBLE_DEVICES="" PYTHONPATH="$REPO" \
     "$KOKORO_PY" "$REPO/scripts/04_tts_render_kokoro.py" "$WORK" "$OUT"
+fi
+if run_phase publish; then
+  echo "== publish (media library) =="
+  PYTHONPATH="$REPO" "$SEG_PY" -m pipeline.publish "$WORK" "$OUT" || echo "  publish failed (not fatal)"
 fi
 echo "Done -> $OUT"
