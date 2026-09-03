@@ -135,16 +135,22 @@ def bind(db: ComicDB, evidence: list[NameEvidence]) -> None:
         n_ev = len([e for e in evs if e.name == name])
         n_panels = len(panels[name])
         multiword = len(name.split()) >= 2
-        # supporting: every token of the name shows up in >=3 dialogue blocks
-        supported = all(mentions.get(w.lower(), 0) >= 3 for w in name.split())
+        toks = [w.lower().strip(".'\"") for w in name.split()]
+        recurs = all(mentions.get(w, 0) >= 3 for w in toks)   # name really repeats
+        seen = all(mentions.get(w, 0) >= 2 for w in toks)
         strong = "printed" in kinds[name] or "self_id" in kinds[name]
 
-        # never bind on a lone weak signal. A self-identification or printed
-        # name counts if it's a full name or echoed elsewhere; otherwise need
-        # two independent references.
-        if (n_panels >= 2 and n_ev >= 2) or (strong and (multiword or supported)):
-            db.bind_name(ent.id, name,
-                         round(min(1.0, 0.4 + 0.2 * n_ev + 0.15 * n_panels), 2))
+        # Magi over-clusters, so a real character's lines split across several
+        # entity ids and each gets few references. Bind when the *name* is
+        # well-attested issue-wide, even off one vocative:
+        bind = (
+            (n_panels >= 2 and n_ev >= 2)          # independent references
+            or (strong and (multiword or seen))    # self-id / printed name
+            or (recurs and (multiword or n_ev >= 1))  # a name that clearly recurs
+        )
+        if bind:
+            conf = min(0.95, 0.35 + 0.2 * n_ev + 0.1 * n_panels + (0.15 if recurs else 0))
+            db.bind_name(ent.id, name, round(conf, 2))
 
     _dedupe_names(db)
     _merge_aliases(db)
