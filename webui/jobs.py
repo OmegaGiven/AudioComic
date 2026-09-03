@@ -62,7 +62,10 @@ class Job:
         return JOBS_DIR / self.id
 
     def save(self) -> None:
-        (self.dir / "job.json").write_text(json.dumps(asdict(self), indent=2))
+        p = self.dir / "job.json"
+        tmp = p.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(asdict(self), indent=2))
+        tmp.replace(p)          # atomic -- a concurrent read never sees a half file
 
 
 class JobStore:
@@ -81,9 +84,10 @@ class JobStore:
 
     def get(self, jid: str) -> Job | None:
         p = JOBS_DIR / jid / "job.json"
-        if not p.exists():
+        try:
+            return Job(**json.loads(p.read_text()))
+        except (OSError, ValueError, TypeError):
             return None
-        return Job(**json.loads(p.read_text()))
 
     def list(self) -> list[Job]:
         out = [self.get(d.name) for d in JOBS_DIR.iterdir() if d.is_dir()]
@@ -186,13 +190,18 @@ class Runner:
 
     def _worker(self) -> None:
         while True:
-            jid = self._q.get()
-            job = self.store.get(jid)
-            if not job or job.status != "queued":
-                continue
-            self._current = jid
             try:
+                jid = self._q.get()
+                job = self.store.get(jid)
+                if not job or job.status != "queued":
+                    continue
+                self._current = jid
                 self._execute(jid)
+            except Exception as e:  # one bad job must never kill the worker
+                job = self.store.get(self._current or "")
+                if job and job.status == "running":
+                    job.status, job.error = "failed", f"internal error: {e}"
+                    job.save()
             finally:
                 self._current = None
                 self._renumber()

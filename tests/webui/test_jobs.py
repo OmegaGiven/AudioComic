@@ -54,3 +54,22 @@ def test_reconcile_finalizes_dead_orphan(tmp_path, monkeypatch):
     job.save()
     store.reconcile(runner)
     assert store.get(job.id).status == "failed"
+
+
+def test_get_survives_corrupt_json(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs, "JOBS_DIR", tmp_path)
+    store = jobs.JobStore()
+    j = store.create("a.cbz", b"x")
+    (tmp_path / j.id / "job.json").write_text("")   # truncated write
+    assert store.get(j.id) is None
+    assert store.list() == []
+
+
+def test_save_is_atomic(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs, "JOBS_DIR", tmp_path)
+    store = jobs.JobStore()
+    j = store.create("a.cbz", b"x")
+    j.phase = "transcribe"
+    j.save()
+    assert store.get(j.id).phase == "transcribe"
+    assert not (tmp_path / j.id / "job.json.tmp").exists()
