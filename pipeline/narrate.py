@@ -25,7 +25,10 @@ from pathlib import Path
 
 from pipeline.llm import ask_llm
 
-MODEL = "devstral:24b"
+# a 12B is plenty for "rephrase these sentences, add nothing" -- and devstral
+# 24b spills off the 16GB card onto CPU (~1 min/page). mistral-nemo is fast,
+# fits, and controls its output well.
+MODEL = "mistral-nemo:12b"
 _WORD = re.compile(r"[A-Za-z][A-Za-z'’-]+")
 _PROPER = re.compile(r"\b([A-Z][a-z]{2,}|[A-Z]{3,})\b")
 # capitalised words that are not names -- allowed to appear anywhere
