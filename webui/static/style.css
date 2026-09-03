@@ -132,3 +132,21 @@ select{width:100%;font:inherit;padding:.7rem .8rem;background:var(--paper);color
   border:1.5px solid var(--rule);border-radius:6px;padding:.5rem .9rem;cursor:pointer;min-height:2.25rem}
 .jobactions button:hover, .btnlink:hover{border-color:var(--accent);color:var(--accent)}
 .jobactions button:disabled{opacity:.5;cursor:wait}
+
+/* persistent player docked at the bottom */
+body:has(.nowplaying:not([hidden])){padding-bottom:6.5rem}
+.nowplaying{position:fixed;left:0;right:0;bottom:0;z-index:20;
+  display:flex;align-items:center;gap:.8rem 1rem;flex-wrap:wrap;
+  padding:.7rem 1rem calc(.7rem + env(safe-area-inset-bottom));
+  background:var(--surface);border-top:2px solid var(--ink);
+  box-shadow:0 -4px 16px rgba(0,0,0,.12)}
+.np-title{display:flex;flex-direction:column;min-width:9rem;flex:0 1 16rem}
+.np-label{font:700 .68rem/1.2 "Arial Narrow",sans-serif;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--ink-soft)}
+#np-name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nowplaying audio{flex:1 1 18rem;min-width:12rem;height:2.5rem}
+.np-close{font:700 .85rem/1 "Arial Narrow",sans-serif;text-transform:uppercase;
+  background:var(--paper);color:var(--ink);border:1.5px solid var(--rule);
+  border-radius:6px;padding:.55rem .9rem;cursor:pointer;min-height:2.5rem}
+.np-close:hover{border-color:var(--accent);color:var(--accent)}
+@media (max-width:38rem){ .np-title{flex-basis:100%} }

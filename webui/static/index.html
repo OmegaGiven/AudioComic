@@ -89,6 +89,15 @@
 
 </main>
 
+<div id="nowplaying" class="nowplaying" role="region" aria-label="Audio player" hidden>
+  <div class="np-title">
+    <span class="np-label">Playing</span>
+    <span id="np-name">&nbsp;</span>
+  </div>
+  <audio id="player" controls preload="metadata"></audio>
+  <button id="np-close" class="np-close" type="button" aria-label="Close the audio player">Close</button>
+</div>
+
 <script src="/static/app.js"></script>
 </body>
 </html>

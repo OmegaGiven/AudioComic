@@ -88,6 +88,38 @@ form.addEventListener("submit", async e => {
   }
 });
 
+/* ---------- persistent player ---------- */
+const np = $("#nowplaying");
+const player = $("#player");
+const npName = $("#np-name");
+let nowPlayingId = null;
+
+function playAudio(url, name, id) {
+  if (nowPlayingId === id && !player.paused) return;
+  npName.textContent = name;
+  player.src = url;
+  np.hidden = false;
+  nowPlayingId = id || url;
+  player.play().catch(() => {});   // autoplay may be blocked; user hits play
+}
+$("#np-close").addEventListener("click", () => {
+  player.pause();
+  player.removeAttribute("src");
+  player.load();
+  np.hidden = true;
+  nowPlayingId = null;
+  refreshQueue();
+});
+player.addEventListener("play", () => { markPlaying(); });
+player.addEventListener("pause", () => { markPlaying(); });
+function markPlaying() {
+  document.querySelectorAll('[data-play-id]').forEach(b => {
+    const on = b.dataset.playId === String(nowPlayingId) && !player.paused;
+    b.textContent = on ? "Pause" : "Play";
+    b.setAttribute("aria-pressed", String(on));
+  });
+}
+
 /* ---------- queue ---------- */
 const queueList = $("#queue-list");
 const queueSummary = $("#queue-summary");
@@ -132,8 +164,10 @@ async function refreshQueue() {
     const actions = [];
     if (j.status === "queued" || j.status === "running")
       actions.push(`<button data-act="cancel" data-id="${j.id}">${j.status === "running" ? "Stop" : "Cancel"}</button>`);
-    if (j.status === "done")
+    if (j.status === "done") {
+      actions.push(`<button data-act="play" data-id="${j.id}" data-play-id="${j.id}" data-name="${jobTitle(j).replace(/"/g, "&quot;")}" aria-pressed="false">Play</button>`);
       actions.push(`<a class="btnlink" href="/api/jobs/${j.id}/download" download>Download</a>`);
+    }
     if (["done", "failed", "cancelled"].includes(j.status))
       actions.push(`<button data-act="remove" data-id="${j.id}">Remove</button>`);
     return `<li class="jobrow" data-status="${j.status}">
@@ -145,16 +179,26 @@ async function refreshQueue() {
       <div class="jobactions">${actions.join(" ")}</div>
     </li>`;
   }).join("");
+  markPlaying();
 }
 
 queueList.addEventListener("click", async e => {
   const btn = e.target.closest("button[data-act]");
   if (!btn) return;
-  const { act, id } = btn.dataset;
+  const { act, id, name } = btn.dataset;
+  if (act === "play") {
+    if (nowPlayingId === id && !player.paused) player.pause();
+    else if (nowPlayingId === id) player.play();
+    else playAudio(`/api/jobs/${id}/download`, name, id);
+    return;
+  }
   btn.disabled = true;
   try {
     if (act === "cancel") await api(`/api/jobs/${id}/cancel`, { method: "POST" });
-    if (act === "remove") await api(`/api/jobs/${id}`, { method: "DELETE" });
+    if (act === "remove") {
+      if (nowPlayingId === id) $("#np-close").click();
+      await api(`/api/jobs/${id}`, { method: "DELETE" });
+    }
   } catch (err) { alert(err.message); }
   refreshQueue();
 });
