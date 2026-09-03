@@ -90,6 +90,31 @@ class JobStore:
                 out.append(j)
         return out
 
+    def reconcile(self) -> None:
+        """On startup: a job left 'running' by a server restart is orphaned.
+        Finish it from disk if the render landed, else mark it failed."""
+        for job in self.list():
+            if job.status != "running":
+                continue
+            wav = job.dir / "out.wav"
+            mp3 = next((job.dir / "work").glob("*.mp3"), None)
+            if wav.exists() and mp3:
+                dst = job.dir / mp3.name
+                dst.write_bytes(mp3.read_bytes())
+                job.mp3, job.status, job.percent = mp3.name, "done", 100
+                job.phase, job.phase_label = "done", "Finished"
+                try:
+                    import wave
+                    with wave.open(str(wav), "rb") as w:
+                        job.duration_s = round(w.getnframes() / w.getframerate(), 1)
+                except Exception:
+                    pass
+            else:
+                job.status = "failed"
+                job.error = "The server restarted while this comic was generating."
+            job.finished = time.time()
+            job.save()
+
 
 _PHASE_RE = re.compile(r"^==\s*([a-z]+)")
 _PROG_RE = re.compile(r"\[(\d+)/(\d+)\]")
