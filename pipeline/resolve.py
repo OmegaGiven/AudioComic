@@ -62,13 +62,20 @@ def collect(db: ComicDB) -> list[NameEvidence]:
         text = b.text_clean or b.text_raw
         panel = b.panel
 
-        if b.kind == "DIALOGUE" and b.entity:
-            m = SELF_ID.search(text)
-            if m and _ok(m.group(1)):
-                ev.append(NameEvidence(b.entity, panel, "self_id", text, _title(m.group(1)), 1.0))
-            if b.speaker_raw and _ok(b.speaker_raw):
-                ev.append(NameEvidence(b.entity, panel, "printed", text, _title(b.speaker_raw), 1.0))
+        # naming evidence only comes from *spoken* lines -- a caption that
+        # mentions a name in the third person ("their son, Bruce") is not
+        # addressing or identifying a speaker.
+        if b.kind != "DIALOGUE" or not b.entity:
+            continue
 
+        m = SELF_ID.search(text)
+        if m and _ok(m.group(1)):
+            ev.append(NameEvidence(b.entity, panel, "self_id", text, _title(m.group(1)), 1.0))
+        if b.speaker_raw and _ok(b.speaker_raw):
+            ev.append(NameEvidence(b.entity, panel, "printed", text, _title(b.speaker_raw), 1.0))
+
+        # a vocative ("..., Barry") names the *addressee* -- bind it to the one
+        # other character speaking in this panel.
         others = _present_entities(db, panel, exclude=b.entity)
         if not others:
             others = [e.id for e in db.entities() if e.id != b.entity and not e.name]
@@ -94,6 +101,12 @@ def bind(db: ComicDB, evidence: list[NameEvidence]) -> None:
     by_entity: dict[str, list[NameEvidence]] = {}
     for e in evidence:
         by_entity.setdefault(e.entity, []).append(e)
+
+    # resolve is re-runnable: wipe every non-override name first so a bad bind
+    # from a previous pass can't survive
+    for ent in db.entities():
+        if ent.id not in db.overrides:
+            db.bind_name(ent.id, None, 0.0)
 
     # how often each candidate name-token shows up anywhere in dialogue --
     # supporting signal that it's a real proper noun, not a one-off word
@@ -133,7 +146,24 @@ def bind(db: ComicDB, evidence: list[NameEvidence]) -> None:
             db.bind_name(ent.id, name,
                          round(min(1.0, 0.4 + 0.2 * n_ev + 0.15 * n_panels), 2))
 
+    _dedupe_names(db)
     _merge_aliases(db)
+
+
+def _dedupe_names(db: ComicDB) -> None:
+    """One name -> one entity. If a cross-vocative bound the same name to two
+    characters, keep the higher-confidence one and unname the other."""
+    by_name: dict[str, list] = {}
+    for e in db.entities():
+        if e.name:
+            by_name.setdefault(e.name.lower(), []).append(e)
+    for group in by_name.values():
+        if len(group) < 2:
+            continue
+        keep = max(group, key=lambda e: e.name_confidence)
+        for e in group:
+            if e is not keep:
+                db.bind_name(e.id, None, 0.0)  # ambiguous -> leave unnamed
 
 
 def _merge_aliases(db: ComicDB) -> None:
