@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AudioComic Studio</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+
+<header class="topbar">
+  <span class="brand">AudioComic Studio</span>
+  <nav aria-label="Sections">
+    <ul class="tabs" role="tablist">
+      <li role="presentation">
+        <button role="tab" id="tab-generate" aria-controls="view-generate"
+                aria-selected="true">Generate</button>
+      </li>
+      <li role="presentation">
+        <button role="tab" id="tab-review" aria-controls="view-review"
+                aria-selected="false" tabindex="-1">Review database</button>
+      </li>
+    </ul>
+  </nav>
+</header>
+
+<main id="main">
+
+  <!-- ============ GENERATE ============ -->
+  <section id="view-generate" role="tabpanel" aria-labelledby="tab-generate">
+    <h1>Turn a comic into an audio comic</h1>
+    <p class="lede">Choose a comic file, start it, and download the narrated audio when it's done.</p>
+
+    <form id="gen-form">
+      <div class="field">
+        <label for="file">Comic file</label>
+        <p id="file-help" class="help">Accepted: .cbz, .cbr, .pdf, .zip. You can also drag a file onto this area.</p>
+        <div id="dropzone" class="dropzone">
+          <input type="file" id="file" name="file" accept=".cbz,.cbr,.pdf,.zip"
+                 aria-describedby="file-help file-chosen" required>
+          <span id="file-chosen" class="chosen" aria-live="polite">No file chosen</span>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label for="series">Series name <span class="opt">(optional)</span></label>
+          <input type="text" id="series" name="series" autocomplete="off">
+        </div>
+        <div class="field narrow">
+          <label for="number">Issue number <span class="opt">(optional)</span></label>
+          <input type="text" id="number" name="number" inputmode="numeric" autocomplete="off">
+        </div>
+      </div>
+
+      <p id="form-error" class="form-error" role="alert" hidden></p>
+      <button type="submit" id="submit" class="primary">Start generating</button>
+    </form>
+
+    <!-- progress -->
+    <section id="progress" class="progress" aria-labelledby="progress-h" hidden>
+      <h2 id="progress-h">Progress</h2>
+      <p id="progress-status" class="progress-status" role="status" aria-live="polite">Starting&hellip;</p>
+      <div class="bar" role="img" aria-hidden="true"><span id="bar-fill"></span></div>
+      <ol id="phase-list" class="phases"></ol>
+    </section>
+
+    <!-- result -->
+    <section id="result" class="result" aria-labelledby="result-h" hidden>
+      <h2 id="result-h">Your audio comic is ready</h2>
+      <p><a id="download" class="primary" href="#" download>Download</a></p>
+      <audio id="player" controls preload="none"></audio>
+      <p><a id="open-review" href="#">Review this comic's database</a></p>
+    </section>
+  </section>
+
+  <!-- ============ REVIEW ============ -->
+  <section id="view-review" role="tabpanel" aria-labelledby="tab-review" hidden>
+    <h1>Review database</h1>
+    <p class="lede">Open a finished comic to check what the AI tagged against the actual pages, and correct it.</p>
+    <div class="field">
+      <label for="review-job">Comic</label>
+      <select id="review-job"><option value="">Loading&hellip;</option></select>
+    </div>
+    <div id="review-body" aria-live="polite">
+      <p class="help">Pick a comic above. Page-by-page review with editing is the next build step.</p>
+    </div>
+  </section>
+
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

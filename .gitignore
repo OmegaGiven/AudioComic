@@ -16,3 +16,6 @@ bakeoff/.venvs/
 bakeoff/out/
 bakeoff/refs/*
 !bakeoff/refs/.gitkeep
+
+.venv-web/
+webui/jobs/
