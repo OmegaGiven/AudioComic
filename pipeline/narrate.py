@@ -94,7 +94,7 @@ def _render_script(segs: list[dict]) -> str:
     return "\n".join(rows)
 
 
-_ROW_RE = re.compile(r"^\s*\[(\d+)\]\s*([^:]+):\s*(.*)$")
+_ROW_RE = re.compile(r"^\s*\[(\d+)\]\s*(?:SCENE:\s*)?(.*)$")
 
 
 def _parse_script(text: str) -> dict[int, str]:
@@ -102,25 +102,28 @@ def _parse_script(text: str) -> dict[int, str]:
     for ln in text.splitlines():
         m = _ROW_RE.match(ln)
         if m:
-            out[int(m.group(1))] = m.group(3).strip()
+            out[int(m.group(1))] = m.group(2).strip()
     return out
 
 
-PROMPT = """You are editing the narration of an audio comic, one page at a time.
+PROMPT = """You are editing the narrator's lines in an audio-comic script, one page at a time.
 
-Below is the page's script. Each line is [index] ROLE: text.
-- ROLE "SCENE" is rough scene-setting written by a machine -- REWRITE these into smooth, vivid narrator prose.
-- ROLE "CAPTION" is a narration box and every other ROLE is spoken dialogue -- copy these lines back EXACTLY, unchanged, in the same place.
+The full page is shown below for context. Each line is [index] ROLE: text.
+CAPTION lines and dialogue lines are FIXED -- do not touch them.
+SCENE lines are rough scene-setting written by a machine. Rewrite each one into a single smooth, vivid sentence of narrator prose.
 
-Rules for the SCENE lines you rewrite:
-- Only rephrase what the SCENE line already says. Do not add events, actions, dialogue, weather, sounds, or thoughts that are not there.
-- Do not use any name, place, or proper noun that does not already appear somewhere in this script.
-- Keep it about the same length -- tighten, do not expand.
-- You may merge two adjacent SCENE lines into one (leave the freed index blank after its number) but never merge a SCENE line into a CAPTION or dialogue line.
+Rules:
+- Only rephrase what that SCENE line already says. Add no events, actions, dialogue, weather, sounds, or thoughts that are not there.
+- Use no name, place, or proper noun that does not already appear somewhere on this page.
+- Tighten -- do not expand.
+- To merge a SCENE line into the one before it, return it empty.
 
-Output the full script back, every [index] in order, same ROLE labels. No commentary.
+Output ONLY the rewritten SCENE lines, one per line, as:
+[index] rewritten sentence
 
-SCRIPT:
+Nothing else -- no CAPTION lines, no dialogue lines, no commentary.
+
+PAGE:
 {script}
 """
 
@@ -131,19 +134,18 @@ def _polish_page(segs: list[dict], allowed: set[str]) -> tuple[list[dict], str]:
         return segs, "no scene lines"
 
     resp = ask_llm(PROMPT.replace("{script}", _render_script(segs)),
-                   model=MODEL, num_predict=1600, timeout=300)
+                   model=MODEL, num_predict=1200, timeout=240)
     if not resp:
         return segs, "llm unavailable"
     rewritten = _parse_script(resp)
 
-    # contract check 1: every non-SCENE line returned unchanged
-    for i, s in enumerate(segs):
-        if s.get("gen"):
-            continue
-        if _norm(rewritten.get(i, "")) != _norm(s["text"]):
-            return segs, f"verbatim line [{i}] altered"
+    # the model only returns SCENE lines now, keyed by index -- it cannot
+    # touch a caption or a line of dialogue. Require it addressed most of them.
+    hit = [i for i in gen_idx if i in rewritten]
+    if len(hit) < max(1, len(gen_idx) - 1):
+        return segs, f"only rewrote {len(hit)}/{len(gen_idx)} scene lines"
 
-    # contract check 2 + 3: no invented proper nouns, no ballooning
+    # contract: no invented proper nouns, no ballooning
     old_words = sum(len(_WORD.findall(segs[i]["text"])) for i in gen_idx)
     new_words = 0
     for i in gen_idx:
@@ -160,10 +162,13 @@ def _polish_page(segs: list[dict], allowed: set[str]) -> tuple[list[dict], str]:
         if not s.get("gen"):
             out.append(s)
             continue
-        nt = rewritten.get(i, "").strip().strip('"“” ')
+        if i not in rewritten:                 # untouched -> keep deterministic line
+            out.append(s)
+            continue
+        nt = rewritten[i].strip().strip('"“” ')
         if nt:
             out.append({**s, "text": nt})
-        # empty -> the model merged it upward; drop the line
+        # explicit empty -> the model merged it upward; drop the line
     return out, "ok"
 
 
