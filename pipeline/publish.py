@@ -38,7 +38,8 @@ def _slug(s: str) -> str:
 def title_for(db: ComicDB) -> tuple[str, str]:
     """-> (series, issue title)"""
     issue = db.issue
-    series = _slug(os.environ.get("COMIC_SERIES") or issue.get("series") or "")
+    raw_series = os.environ.get("COMIC_SERIES") or issue.get("series") or ""
+    series = _slug(raw_series) if raw_series.strip() else ""
     number = os.environ.get("COMIC_NUMBER") or issue.get("number")
     number = int(number) if number not in (None, "") else None
     src = Path(issue.get("source", "")).stem
