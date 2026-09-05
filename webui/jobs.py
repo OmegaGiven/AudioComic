@@ -177,7 +177,7 @@ class Runner:
     def reattach(self, jid: str) -> None:
         threading.Thread(target=self._wait_out, args=(jid,), daemon=True).start()
 
-    def rerun(self, jid: str, phase: str) -> tuple[bool, str]:
+    def rerun(self, jid: str, phase: str, tts_engine: str = "kokoro") -> tuple[bool, str]:
         """Re-run a finished/failed job from an earlier phase onward -- e.g.
         edit work/narrative.json by hand, then rerun from "render" to hear it
         without redoing (and re-billing) everything before it."""
@@ -195,13 +195,13 @@ class Runner:
         job.mp3, job.duration_s = "", None
         job.phase, job.phase_label, job.progress, job.percent = "", "", "", 0
         job.save()
-        threading.Thread(target=self._run_from, args=(jid, phase), daemon=True).start()
+        threading.Thread(target=self._run_from, args=(jid, phase, tts_engine), daemon=True).start()
         return True, ""
 
-    def _run_from(self, jid: str, phase: str) -> None:
+    def _run_from(self, jid: str, phase: str, tts_engine: str) -> None:
         self._current = jid
         try:
-            self._execute(jid, from_phase=phase)
+            self._execute(jid, from_phase=phase, tts_engine=tts_engine)
         finally:
             self._current = None
             self._renumber()
@@ -258,7 +258,7 @@ class Runner:
             _finalize(job, "The pipeline stopped before finishing.")
         self._current = None
 
-    def _execute(self, jid: str, from_phase: str = "segment") -> None:
+    def _execute(self, jid: str, from_phase: str = "segment", tts_engine: str = "kokoro") -> None:
         job = self.store.get(jid)
         if not job:
             return
@@ -280,6 +280,10 @@ class Runner:
             # so a job can ask to use Claude but can't supply its own key
             "VISION": job.vision,
             "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY", ""),
+            # which TTS engine the render phase uses -- only meaningful when
+            # this run actually reaches render (fresh run or a rerun aimed
+            # at/past that phase); harmless otherwise
+            "TTS_ENGINE": tts_engine,
         }
         proc = subprocess.Popen(
             ["bash", str(REPO_ROOT / "pipeline" / "run.sh"),

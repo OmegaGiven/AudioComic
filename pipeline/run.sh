@@ -65,9 +65,17 @@ if run_phase narrate; then
   PYTHONPATH="$REPO" "$SEG_PY" -m pipeline.narrate "$WORK" || echo "  narrate skipped (not fatal)"
 fi
 if run_phase render; then
-  echo "== render (Kokoro, CPU) =="
-  CUDA_VISIBLE_DEVICES="" PYTHONPATH="$REPO" \
-    "$KOKORO_PY" "$REPO/scripts/04_tts_render_kokoro.py" "$WORK" "$OUT"
+  TTS_ENGINE="${TTS_ENGINE:-kokoro}"
+  if [ "$TTS_ENGINE" = "dia" ]; then
+    echo "== render (Dia, GPU) =="
+    DIA_PY="${DIA_PY:-$REPO/.venv-dia/bin/python}"
+    for m in $($OLLAMA ps 2>/dev/null | awk 'NR>1{print $1}'); do $OLLAMA stop "$m" || true; done
+    PYTHONPATH="$REPO" "$DIA_PY" "$REPO/scripts/04_tts_render_dia.py" "$WORK" "$OUT"
+  else
+    echo "== render (Kokoro, CPU) =="
+    CUDA_VISIBLE_DEVICES="" PYTHONPATH="$REPO" \
+      "$KOKORO_PY" "$REPO/scripts/04_tts_render_kokoro.py" "$WORK" "$OUT"
+  fi
 fi
 if run_phase publish; then
   echo "== publish (media library) =="

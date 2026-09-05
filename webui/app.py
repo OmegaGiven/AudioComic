@@ -68,8 +68,8 @@ def cancel_job(jid: str) -> dict:
 
 
 @app.post("/api/jobs/{jid}/rerun")
-def rerun_job(jid: str, phase: str = Form(...)) -> dict:
-    ok, why = runner.rerun(jid, phase)
+def rerun_job(jid: str, phase: str = Form(...), engine: str = Form("kokoro")) -> dict:
+    ok, why = runner.rerun(jid, phase, tts_engine=engine if engine == "dia" else "kokoro")
     if not ok:
         raise HTTPException(409, why)
     return asdict(store.get(jid))

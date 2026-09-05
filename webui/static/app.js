@@ -215,6 +215,11 @@ async function refreshQueue() {
       actions.push(`<span class="rerun-group">
           <label class="visually-hidden" for="rerun-${j.id}">Rerun from phase</label>
           <select id="rerun-${j.id}" data-rerun-select="${j.id}">${opts}</select>
+          <label class="visually-hidden" for="rerun-engine-${j.id}">Voice model</label>
+          <select id="rerun-engine-${j.id}" data-rerun-engine="${j.id}" title="Voice model (only used if the render step runs)">
+            <option value="kokoro" selected>Kokoro (fast)</option>
+            <option value="dia">Dia (slower, more natural short lines)</option>
+          </select>
           <button data-act="rerun" data-id="${j.id}">Rerun from…</button>
         </span>`);
     }
@@ -251,8 +256,10 @@ queueList.addEventListener("click", async e => {
     if (act === "cancel") await api(`/api/jobs/${id}/cancel`, { method: "POST" });
     if (act === "rerun") {
       const sel = document.querySelector(`[data-rerun-select="${id}"]`);
+      const eng = document.querySelector(`[data-rerun-engine="${id}"]`);
       const fd = new FormData();
       fd.append("phase", sel ? sel.value : "render");
+      fd.append("engine", eng ? eng.value : "kokoro");
       await api(`/api/jobs/${id}/rerun`, { method: "POST", body: fd });
     }
     if (act === "remove") {
