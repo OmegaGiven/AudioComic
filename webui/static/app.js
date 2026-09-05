@@ -67,6 +67,7 @@ form.addEventListener("submit", async e => {
   fd.append("file", fileInput.files[0]);
   fd.append("series", $("#series").value);
   fd.append("number", $("#number").value);
+  fd.append("vision", $("#vision").value);
   try {
     const job = await api("/api/jobs", { method: "POST", body: fd });
     addOk.textContent = job.status === "running"
@@ -212,6 +213,7 @@ async function refreshQueue() {
     return `<li class="jobrow" data-status="${j.status}">
       <div class="jobmain">
         <span class="jobtitle">${jobTitle(j)}</span>
+        ${j.vision === "claude" ? '<span class="badge-claude" title="Processed with the Claude API">Claude</span>' : ""}
         <span class="jobstatus">${statusText(j)}</span>
         <span class="jobtime">${fmtWhen(j)}</span>
       </div>

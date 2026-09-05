@@ -43,7 +43,7 @@ def list_jobs() -> list[dict]:
 
 @app.post("/api/jobs")
 async def create_job(file: UploadFile, series: str = Form(""),
-                     number: str = Form("")) -> dict:
+                     number: str = Form(""), vision: str = Form("local")) -> dict:
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED:
         raise HTTPException(
@@ -52,7 +52,7 @@ async def create_job(file: UploadFile, series: str = Form(""),
     data = await file.read()
     num = int(number) if number.strip().isdigit() else None
     job = store.create(file.filename or f"comic{ext}", data,
-                       series=series.strip(), number=num)
+                       series=series.strip(), number=num, vision=vision)
     runner.enqueue(job.id)
     return asdict(store.get(job.id))
 

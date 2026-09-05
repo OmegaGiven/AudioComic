@@ -45,8 +45,16 @@
         <label for="number">Issue&nbsp;#</label>
         <input type="text" id="number" name="number" inputmode="numeric" autocomplete="off" placeholder="opt.">
       </div>
+      <div class="ub-field ub-vision">
+        <label for="vision" id="vision-label">Vision</label>
+        <select id="vision" name="vision" aria-describedby="vision-help">
+          <option value="local" selected>Local (free)</option>
+          <option value="claude">Claude API (costs money)</option>
+        </select>
+      </div>
       <button type="submit" id="submit" class="primary">Add</button>
       <p id="file-help" class="help">Accepted: .cbz, .cbr, .pdf, .zip. You can also drop a file here.</p>
+      <p id="vision-help" class="help">Claude API sends each page to Anthropic and bills your account -- only turn it on when you mean to.</p>
       <p id="form-error" class="form-error" role="alert" hidden></p>
       <p id="add-ok" class="add-ok" role="status" aria-live="polite" hidden></p>
     </form>

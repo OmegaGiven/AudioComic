@@ -55,16 +55,16 @@ h2{font:700 1.3rem/1.1 "Arial Narrow",sans-serif;text-transform:uppercase;
 
 /* ---- one-line uploader ---- */
 .uploadbar{display:grid;
-  grid-template-columns:minmax(0,1.7fr) minmax(0,1fr) 6rem auto;
+  grid-template-columns:minmax(0,1.7fr) minmax(0,1fr) 6rem minmax(9rem,auto) auto;
   gap:.7rem 1rem;align-items:end;
   background:var(--surface);border:2px dashed var(--rule);border-radius:10px;
   padding:1rem 1.1rem}
 .uploadbar.drag{border-color:var(--accent);background:var(--accent-soft)}
 .uploadbar label{display:block;font:700 .72rem/1.2 "Arial Narrow",sans-serif;
   text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);margin-bottom:.25rem}
-.uploadbar input{width:100%;font:inherit;font-size:.95rem;padding:.55rem .6rem;
+.uploadbar input,.uploadbar select{width:100%;font:inherit;font-size:.95rem;padding:.55rem .6rem;
   background:var(--paper);color:var(--ink);border:1.5px solid var(--rule);border-radius:6px}
-.uploadbar input:focus-visible{border-color:var(--accent)}
+.uploadbar input:focus-visible,.uploadbar select:focus-visible{border-color:var(--accent)}
 .uploadbar input[type=file]{padding:.4rem .3rem}
 .uploadbar .primary{align-self:end;min-height:2.6rem}
 .uploadbar .help,.uploadbar .form-error,.uploadbar .add-ok{grid-column:1/-1;margin:.3rem 0 0}
@@ -99,6 +99,9 @@ button.primary:hover:not(:disabled),a.primary:hover{filter:brightness(1.08)}
 .jobtitle{font-weight:700;font-size:1.08rem}
 .jobstatus{color:var(--ink-soft);font-size:.95rem}
 .jobtime{color:var(--ink-soft);font-size:.82rem;opacity:.8;flex-basis:100%}
+.badge-claude{font:700 .68rem/1 "Arial Narrow",sans-serif;text-transform:uppercase;
+  letter-spacing:.05em;color:#fff;background:var(--accent);border-radius:4px;
+  padding:.2rem .4rem}
 
 /* phase-dotted progress track */
 .track{position:relative;height:10px;margin:.35rem 0 .1rem;

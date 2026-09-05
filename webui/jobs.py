@@ -47,6 +47,7 @@ class Job:
     filename: str
     series: str = ""
     number: int | None = None
+    vision: str = "local"           # local (free, qwen2.5vl) | claude (costs money)
     status: str = "queued"          # queued | running | done | failed | cancelled
     queue_pos: int = 0              # 1-based place in line while queued
     phase: str = ""                 # current phase key
@@ -76,9 +77,10 @@ class JobStore:
         self._lock = threading.Lock()
 
     def create(self, upload_name: str, data: bytes, *, series: str = "",
-               number: int | None = None) -> Job:
+               number: int | None = None, vision: str = "local") -> Job:
         jid = uuid.uuid4().hex[:12]
-        job = Job(id=jid, filename=upload_name, series=series, number=number)
+        job = Job(id=jid, filename=upload_name, series=series, number=number,
+                  vision=vision if vision == "claude" else "local")
         (job.dir / "upload").mkdir(parents=True, exist_ok=True)
         (job.dir / "upload" / upload_name).write_bytes(data)
         job.save()
@@ -234,10 +236,10 @@ class Runner:
             "PATH": "/home/omegagiven/.local/bin:/usr/bin:/bin",
             "HOME": str(Path.home()),
             "PYTHONUNBUFFERED": "1",   # so phase [n/m] lines reach us live
-            # opt-in Claude vision backend (run.sh defaults to VISION=local) --
-            # both read from the *web server's* environment, not the request,
-            # so a job never carries an API key of its own
-            "VISION": os.environ.get("VISION", "local"),
+            # per-job opt-in to the Claude vision backend; the API key itself
+            # always comes from the *server's* environment, never the request,
+            # so a job can ask to use Claude but can't supply its own key
+            "VISION": job.vision,
             "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY", ""),
         }
         proc = subprocess.Popen(
