@@ -177,6 +177,35 @@ class Runner:
     def reattach(self, jid: str) -> None:
         threading.Thread(target=self._wait_out, args=(jid,), daemon=True).start()
 
+    def rerun(self, jid: str, phase: str) -> tuple[bool, str]:
+        """Re-run a finished/failed job from an earlier phase onward -- e.g.
+        edit work/narrative.json by hand, then rerun from "render" to hear it
+        without redoing (and re-billing) everything before it."""
+        job = self.store.get(jid)
+        if not job:
+            return False, "No job with that id."
+        if job.status in ("queued", "running"):
+            return False, "That job is already queued or running."
+        valid = phases_for(job.vision)
+        if phase not in valid:
+            return False, f"'{phase}' isn't a phase of this job's pipeline ({', '.join(valid)})."
+        if self._current is not None:
+            return False, "Another job is currently running -- wait for it to finish first."
+        job.status, job.error, job.finished = "running", "", None
+        job.mp3, job.duration_s = "", None
+        job.phase, job.phase_label, job.progress, job.percent = "", "", "", 0
+        job.save()
+        threading.Thread(target=self._run_from, args=(jid, phase), daemon=True).start()
+        return True, ""
+
+    def _run_from(self, jid: str, phase: str) -> None:
+        self._current = jid
+        try:
+            self._execute(jid, from_phase=phase)
+        finally:
+            self._current = None
+            self._renumber()
+
     def cancel(self, jid: str) -> bool:
         job = self.store.get(jid)
         if not job:
@@ -229,7 +258,7 @@ class Runner:
             _finalize(job, "The pipeline stopped before finishing.")
         self._current = None
 
-    def _execute(self, jid: str) -> None:
+    def _execute(self, jid: str, from_phase: str = "segment") -> None:
         job = self.store.get(jid)
         if not job:
             return
@@ -254,7 +283,7 @@ class Runner:
         }
         proc = subprocess.Popen(
             ["bash", str(REPO_ROOT / "pipeline" / "run.sh"),
-             str(upload), str(work), str(out_wav)],
+             str(upload), str(work), str(out_wav), "--from", from_phase],
             cwd=str(REPO_ROOT), env={**env}, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True, bufsize=1,
             start_new_session=True,  # survive a web-server restart

@@ -67,6 +67,14 @@ def cancel_job(jid: str) -> dict:
     return asdict(store.get(jid))
 
 
+@app.post("/api/jobs/{jid}/rerun")
+def rerun_job(jid: str, phase: str = Form(...)) -> dict:
+    ok, why = runner.rerun(jid, phase)
+    if not ok:
+        raise HTTPException(409, why)
+    return asdict(store.get(jid))
+
+
 @app.delete("/api/jobs/{jid}")
 def delete_job(jid: str) -> dict:
     job = store.get(jid)

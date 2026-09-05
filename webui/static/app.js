@@ -208,6 +208,16 @@ async function refreshQueue() {
       actions.push(`<button data-act="play" data-id="${j.id}" data-play-id="${j.id}" data-name="${nm}" aria-pressed="false">Play</button>`);
       actions.push(`<a class="btnlink" href="/api/jobs/${j.id}/download" download>Download</a>`);
     }
+    if (["done", "failed"].includes(j.status)) {
+      const phases = (PHASES[j.vision === "claude" ? "claude" : "local"] || [])
+        .filter(p => p.key !== "segment");
+      const opts = phases.map(p => `<option value="${p.key}"${p.key === "render" ? " selected" : ""}>${p.label}</option>`).join("");
+      actions.push(`<span class="rerun-group">
+          <label class="visually-hidden" for="rerun-${j.id}">Rerun from phase</label>
+          <select id="rerun-${j.id}" data-rerun-select="${j.id}">${opts}</select>
+          <button data-act="rerun" data-id="${j.id}">Rerun from…</button>
+        </span>`);
+    }
     if (["done", "failed", "cancelled"].includes(j.status))
       actions.push(`<button data-act="remove" data-id="${j.id}">Remove</button>`);
     const showTrack = j.status === "running" || j.status === "done";
@@ -239,6 +249,12 @@ queueList.addEventListener("click", async e => {
   btn.disabled = true;
   try {
     if (act === "cancel") await api(`/api/jobs/${id}/cancel`, { method: "POST" });
+    if (act === "rerun") {
+      const sel = document.querySelector(`[data-rerun-select="${id}"]`);
+      const fd = new FormData();
+      fd.append("phase", sel ? sel.value : "render");
+      await api(`/api/jobs/${id}/rerun`, { method: "POST", body: fd });
+    }
     if (act === "remove") {
       if (nowPlayingId === id) $("#np-close").click();
       await api(`/api/jobs/${id}`, { method: "DELETE" });

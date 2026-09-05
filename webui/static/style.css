@@ -122,7 +122,10 @@ button.primary:hover:not(:disabled),a.primary:hover{filter:brightness(1.08)}
 .phase-legend span[data-state="current"]{color:var(--accent);font-weight:700}
 .phase-legend span[data-state="done"]{color:var(--ink)}
 
-.jobactions{display:flex;gap:.5rem;flex-wrap:wrap}
+.jobactions{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+.rerun-group{display:inline-flex;gap:.35rem;align-items:center}
+.rerun-group select{font:inherit;font-size:.85rem;padding:.35rem .4rem;
+  background:var(--paper);color:var(--ink);border:1.5px solid var(--rule);border-radius:6px}
 .jobactions button,.btnlink{font:700 .9rem/1 "Arial Narrow",sans-serif;text-transform:uppercase;
   letter-spacing:.02em;background:var(--paper);color:var(--ink);text-decoration:none;
   border:1.5px solid var(--rule);border-radius:6px;padding:.5rem .9rem;cursor:pointer;min-height:2.25rem}
