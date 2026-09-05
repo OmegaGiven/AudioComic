@@ -40,9 +40,13 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
 
 def ask_claude(image_path: str, *, system: str, prompt: str,
                model: str = DEFAULT_MODEL, max_tokens: int = 2000,
-               temperature: float = 0.0, timeout: int = 120) -> dict:
+               timeout: int = 120) -> dict:
     """One image + one text turn. Returns
-    {"text", "usage": {"input_tokens","output_tokens"}, "cost", "error"}."""
+    {"text", "usage": {"input_tokens","output_tokens"}, "cost", "error"}.
+
+    No `temperature` param -- claude-sonnet-5 rejects it outright ("temperature
+    is deprecated for this model"), which failed every call with $0 billed
+    (Anthropic rejects at validation, before any generation happens)."""
     key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not key:
         return {"text": "", "error": "ANTHROPIC_API_KEY not set"}
@@ -52,7 +56,6 @@ def ask_claude(image_path: str, *, system: str, prompt: str,
     payload = {
         "model": model,
         "max_tokens": max_tokens,
-        "temperature": temperature,
         "system": system,
         "messages": [{
             "role": "user",
