@@ -178,26 +178,38 @@ def main() -> None:
     print(f"{len(todo)} pages to send to {DEFAULT_MODEL}")
 
     for n, p in enumerate(todo):
-        res = ask_claude(p.image, system=SYSTEM,
-                         prompt=_prompt(p.index + 1, len(pages), _cast_summary(cast)),
-                         max_tokens=2500)
+        prompt = _prompt(p.index + 1, len(pages), _cast_summary(cast))
+        res = ask_claude(p.image, system=SYSTEM, prompt=prompt, max_tokens=4000)
+        data = _parse(res.get("text", "")) if not res.get("error") else None
+        retried, first_cost = False, res.get("cost", 0.0)
+        if not res.get("error") and (res.get("stop_reason") == "max_tokens" or not data):
+            # 4000 wasn't enough (a dialogue-dense page) and the JSON got cut
+            # mid-string, so it won't parse -- one retry with real headroom.
+            # Both calls are real spend; count them both.
+            retried = True
+            res = ask_claude(p.image, system=SYSTEM, prompt=prompt, max_tokens=8000)
+            data = _parse(res.get("text", "")) if not res.get("error") else None
         if res.get("error"):
             print(f"[{n+1}/{len(todo)}] page {p.index}: ERROR {res['error']}", file=sys.stderr)
             continue
-        data = _parse(res["text"])
         v = Vision(model=DEFAULT_MODEL, prompt_v=PROMPT_V, raw=res["text"],
                    at=dt.datetime.now().isoformat(timespec="seconds"))
         db.set_page_vision(p.index, v)
         if data:
             _update_cast(cast, data.get("cast_updates"))
             _rebuild_page(db, p, data, cast)
+        else:
+            print(f"[{n+1}/{len(todo)}] page {p.index}: JSON still unparseable after retry",
+                  file=sys.stderr)
         db.save()
-        cost = res.get("cost", 0.0)
+        cost = first_cost + res.get("cost", 0.0)
         total_cost += cost
         npan = len(data.get("panels", [])) if data else 0
         print(f"[{n+1}/{len(todo)}] page {p.index}: {npan} panels, "
               f"${cost:.4f} (running total ${total_cost:.2f})")
 
+    db.issue["cost_usd"] = round(db.issue.get("cost_usd", 0.0) + total_cost, 4)
+    db.issue["cost_model"] = DEFAULT_MODEL
     db.save()
     named = [(e.id, e.name, e.name_confidence) for e in db.entities() if e.name]
     print(f"\n{len(named)} named characters:")

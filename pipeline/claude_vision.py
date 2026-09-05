@@ -85,4 +85,4 @@ def ask_claude(image_path: str, *, system: str, prompt: str,
     text = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
     usage = d.get("usage", {})
     cost = estimate_cost(model, usage.get("input_tokens", 0), usage.get("output_tokens", 0))
-    return {"text": text, "usage": usage, "cost": cost}
+    return {"text": text, "usage": usage, "cost": cost, "stop_reason": d.get("stop_reason")}

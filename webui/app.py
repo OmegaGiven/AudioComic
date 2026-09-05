@@ -14,7 +14,7 @@ from fastapi import FastAPI, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from webui.jobs import PHASES, JobStore, Runner
+from webui.jobs import CLAUDE_PHASES, PHASES, JobStore, Runner
 
 STATIC = Path(__file__).resolve().parent / "static"
 ALLOWED = {".cbz", ".cbr", ".pdf", ".zip"}
@@ -31,9 +31,12 @@ def index() -> str:
 
 
 @app.get("/api/phases")
-def phases() -> list[dict]:
+def phases() -> dict:
     from webui.jobs import PHASE_LABEL
-    return [{"key": k, "label": PHASE_LABEL[k]} for k in PHASES]
+    return {
+        "local": [{"key": k, "label": PHASE_LABEL[k]} for k in PHASES],
+        "claude": [{"key": k, "label": PHASE_LABEL[k]} for k in CLAUDE_PHASES],
+    }
 
 
 @app.get("/api/jobs")

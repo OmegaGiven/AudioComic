@@ -28,17 +28,25 @@ JOBS_DIR = Path(__file__).resolve().parent / "jobs"
 
 PHASES = ["segment", "transcribe", "identify", "resolve", "redescribe",
           "assemble", "narrate", "render", "publish"]
+# VISION=claude skips transcribe/identify/resolve/redescribe for one
+# claude_extract phase -- see pipeline/run.sh's VISION branch
+CLAUDE_PHASES = ["segment", "claude_extract", "assemble", "narrate", "render", "publish"]
 PHASE_LABEL = {
     "segment": "Splitting pages into panels",
     "transcribe": "Reading every panel",
     "identify": "Identifying characters",
     "resolve": "Working out character names",
     "redescribe": "Describing each scene",
+    "claude_extract": "Reading pages with Claude",
     "assemble": "Writing the script",
     "narrate": "Polishing the narration",
     "render": "Recording the voices",
     "publish": "Publishing to the library",
 }
+
+
+def phases_for(vision: str) -> list[str]:
+    return CLAUDE_PHASES if vision == "claude" else PHASES
 
 
 @dataclass
@@ -59,6 +67,7 @@ class Job:
     error: str = ""
     mp3: str = ""                   # basename of the finished file
     duration_s: float | None = None
+    cost_usd: float | None = None   # running Claude API spend, if vision=="claude"
 
     @property
     def dir(self) -> Path:
@@ -141,8 +150,9 @@ def _finalize(job: Job | None, fail_reason: str) -> None:
     job.save()
 
 
-_PHASE_RE = re.compile(r"^==\s*([a-z]+)")
+_PHASE_RE = re.compile(r"^==\s*([a-z_]+)")
 _PROG_RE = re.compile(r"\[(\d+)/(\d+)\]")
+_COST_RE = re.compile(r"running total \$([\d.]+)")
 
 
 class Runner:
@@ -250,7 +260,8 @@ class Runner:
             start_new_session=True,  # survive a web-server restart
         )
         self._procs[jid] = proc
-        total_phases = len(PHASES)
+        phase_list = phases_for(job.vision)
+        total_phases = len(phase_list)
         for line in proc.stdout or []:
             line = line.rstrip()
             m = _PHASE_RE.match(line)
@@ -258,16 +269,22 @@ class Runner:
                 job.phase = m.group(1)
                 job.phase_label = PHASE_LABEL[job.phase]
                 job.progress = ""
-                job.percent = int(100 * PHASES.index(job.phase) / total_phases)
+                if job.phase in phase_list:
+                    job.percent = int(100 * phase_list.index(job.phase) / total_phases)
                 job.save()
                 continue
             pm = _PROG_RE.search(line)
             if pm:
                 done, tot = int(pm.group(1)), int(pm.group(2))
                 job.progress = f"{done} of {tot}"
-                if job.phase in PHASES:
-                    base = PHASES.index(job.phase) / total_phases
+                if job.phase in phase_list:
+                    base = phase_list.index(job.phase) / total_phases
                     job.percent = int(100 * (base + (done / max(tot, 1)) / total_phases))
+                job.save()
+                continue
+            cm = _COST_RE.search(line)
+            if cm:
+                job.cost_usd = float(cm.group(1))
                 job.save()
         proc.wait()
         self._procs.pop(jid, None)

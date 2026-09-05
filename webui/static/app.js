@@ -6,7 +6,7 @@ const api = (p, o) => fetch(p, o).then(async r => {
   if (!r.ok) throw new Error(body.detail || `Request failed (${r.status})`);
   return body;
 });
-let PHASES = [];
+let PHASES = { local: [], claude: [] };
 api("/api/phases").then(p => { PHASES = p; refreshQueue(); });
 
 /* ---------- tabs ---------- */
@@ -164,23 +164,24 @@ function statusText(j) {
 }
 
 function track(j) {
-  if (!PHASES.length) return "";
-  const cur = PHASES.findIndex(p => p.key === j.phase);
+  const phases = PHASES[j.vision === "claude" ? "claude" : "local"] || [];
+  if (!phases.length) return "";
+  const cur = phases.findIndex(p => p.key === j.phase);
   const fill = j.status === "done" ? 100 : (j.status === "running" ? j.percent : 0);
-  const dots = PHASES.map((p, i) => {
+  const dots = phases.map((p, i) => {
     let st = "pending";
     if (j.status === "done" || i < cur) st = "done";
     else if (i === cur && j.status === "running") st = "current";
-    const left = PHASES.length === 1 ? 50 : (i / (PHASES.length - 1)) * 100;
+    const left = phases.length === 1 ? 50 : (i / (phases.length - 1)) * 100;
     return `<span class="dot" data-state="${st}" style="left:${left}%" title="${p.label}"></span>`;
   }).join("");
-  const legend = PHASES.map((p, i) => {
+  const legend = phases.map((p, i) => {
     let st = "pending";
     if (j.status === "done" || i < cur) st = "done";
     else if (i === cur && j.status === "running") st = "current";
     return `<span data-state="${st}">${p.label}</span>`;
   }).join("");
-  return `<div class="track" role="img" aria-label="Phase ${Math.max(cur + 1, 0)} of ${PHASES.length}: ${statusText(j)}">
+  return `<div class="track" role="img" aria-label="Phase ${Math.max(cur + 1, 0)} of ${phases.length}: ${statusText(j)}">
       <span class="fill" style="width:${fill}%"></span>${dots}
     </div>
     <div class="phase-legend" aria-hidden="true">${legend}</div>`;
@@ -213,7 +214,8 @@ async function refreshQueue() {
     return `<li class="jobrow" data-status="${j.status}">
       <div class="jobmain">
         <span class="jobtitle">${jobTitle(j)}</span>
-        ${j.vision === "claude" ? '<span class="badge-claude" title="Processed with the Claude API">Claude</span>' : ""}
+        ${j.vision === "claude" ? `<span class="badge-claude" title="Processed with the Claude API">Claude${
+            j.cost_usd != null ? ` · $${j.cost_usd.toFixed(2)}` : ""}</span>` : ""}
         <span class="jobstatus">${statusText(j)}</span>
         <span class="jobtime">${fmtWhen(j)}</span>
       </div>
@@ -287,7 +289,8 @@ async function openDb(jid) {
     + `${d.blocks.filter(b => b.kind === "DIALOGUE").length} dialogue, `
     + `${d.blocks.filter(b => b.kind === "SFX").length} sfx) · `
     + `${d.entities.length} character clusters, `
-    + `${d.entities.filter(e => e.name).length} named · ${fm} front-matter pages skipped`;
+    + `${d.entities.filter(e => e.name).length} named · ${fm} front-matter pages skipped`
+    + (d.issue?.cost_usd != null ? ` · Claude API cost: $${d.issue.cost_usd.toFixed(2)} (${d.issue.cost_model || ""})` : "");
   renderEntities();
   $("#pagenav").hidden = false;
   $("#db-view").hidden = false;
