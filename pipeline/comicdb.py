@@ -40,6 +40,12 @@ class Page:
     w: int = 0
     h: int = 0
     is_front_matter: bool = False
+    #: page-level vision call (used by claude_extract; cached raw response
+    #: keyed by model+prompt_v so a re-run doesn't re-bill the API)
+    vision: Vision = field(default_factory=Vision)
+    #: short cross-page summary, used as the "known cast/plot so far" context
+    #: fed into the next page's prompt
+    summary: str = ""
 
 
 @dataclass
@@ -67,8 +73,12 @@ class Block:
     kind: str            # CAPTION | DIALOGUE | SFX
     text_raw: str
     text_clean: str = ""
-    entity: str | None = None       # set by identify
+    entity: str | None = None       # set by identify (or directly by claude_extract)
     speaker_raw: str | None = None  # a name the vision model printed, if any
+    #: claude_extract's own confidence that speaker_raw/entity is correctly
+    #: identified (0-1) and a short note on why (self-id, recurring costume, ...)
+    speaker_confidence: float = 0.0
+    speaker_evidence: str = ""
     essential: bool = True
 
 
@@ -149,7 +159,11 @@ class ComicDB:
         return self._d["overrides"]
 
     def pages(self) -> list[Page]:
-        return [Page(**p) for p in self._d["pages"]]
+        return [_page(p) for p in self._d["pages"]]
+
+    def page(self, index: int) -> Page | None:
+        raw = next((p for p in self._d["pages"] if p["index"] == index), None)
+        return _page(raw) if raw else None
 
     def panels(self) -> list[Panel]:
         return [_panel(p) for p in self._d["panels"]]
@@ -159,7 +173,7 @@ class ComicDB:
         return _panel(raw) if raw else None
 
     def blocks(self, *, panel: str | None = None, entity: str | None = None) -> list[Block]:
-        out = [Block(**b) for b in self._d["blocks"]]
+        out = [_block(b) for b in self._d["blocks"]]
         if panel is not None:
             out = [b for b in out if b.panel == panel]
         if entity is not None:
@@ -182,6 +196,26 @@ class ComicDB:
         self._d["pages"] = [p for p in self._d["pages"] if p["index"] != page.index]
         self._d["pages"].append(asdict(page))
         self._d["pages"].sort(key=lambda p: p["index"])
+
+    def set_page_vision(self, index: int, vision: Vision, summary: str = "") -> None:
+        for p in self._d["pages"]:
+            if p["index"] == index:
+                p["vision"] = asdict(vision)
+                if summary:
+                    p["summary"] = summary
+                return
+
+    def set_page_summary(self, index: int, summary: str) -> None:
+        for p in self._d["pages"]:
+            if p["index"] == index:
+                p["summary"] = summary
+                return
+
+    def remove_panels_for_page(self, index: int) -> None:
+        """Drop a page's panels and their blocks -- claude_extract rebuilds them."""
+        dead = {p["id"] for p in self._d["panels"] if p["page"] == index}
+        self._d["panels"] = [p for p in self._d["panels"] if p["id"] not in dead]
+        self._d["blocks"] = [b for b in self._d["blocks"] if b["panel"] not in dead]
 
     def add_panel(self, panel: Panel) -> None:
         self._d["panels"] = [p for p in self._d["panels"] if p["id"] != panel.id]
@@ -262,6 +296,20 @@ class ComicDB:
 
 
 # -- (de)serialisation helpers -----------------------------------------
+def _page(raw: dict) -> Page:
+    raw = dict(raw)
+    raw["vision"] = Vision(**raw.get("vision", {}))
+    raw.setdefault("summary", "")
+    return Page(**raw)
+
+
+def _block(raw: dict) -> Block:
+    raw = dict(raw)
+    raw.setdefault("speaker_confidence", 0.0)
+    raw.setdefault("speaker_evidence", "")
+    return Block(**raw)
+
+
 def _panel(raw: dict) -> Panel:
     raw = dict(raw)
     raw["vision"] = Vision(**raw.get("vision", {}))

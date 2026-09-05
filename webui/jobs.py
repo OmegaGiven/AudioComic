@@ -12,6 +12,7 @@ progress markers, so it inherits all the venv / GPU-juggling logic.
 from __future__ import annotations
 
 import json
+import os
 import queue
 import re
 import signal
@@ -233,6 +234,11 @@ class Runner:
             "PATH": "/home/omegagiven/.local/bin:/usr/bin:/bin",
             "HOME": str(Path.home()),
             "PYTHONUNBUFFERED": "1",   # so phase [n/m] lines reach us live
+            # opt-in Claude vision backend (run.sh defaults to VISION=local) --
+            # both read from the *web server's* environment, not the request,
+            # so a job never carries an API key of its own
+            "VISION": os.environ.get("VISION", "local"),
+            "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY", ""),
         }
         proc = subprocess.Popen(
             ["bash", str(REPO_ROOT / "pipeline" / "run.sh"),
